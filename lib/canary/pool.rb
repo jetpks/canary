@@ -7,16 +7,33 @@ require "stringio"
 # which is still tagged experimental upstream; it has nothing to do with any
 # code in this file. The warning fires in the parent, from
 # #fork_and_collect's own `reader.read` below, not in a forked child, so it
-# can't be scoped to a fork - and toggling Warning[:experimental] around
-# just that call isn't safe either: that read yields to the async reactor
-# while it waits, so another fiber's unrelated experimental warning could be
-# suppressed (or this one reintroduced) depending on scheduling. Filtering
-# this one message by text, instead of disabling the whole :experimental
-# category, keeps every other consumer of the gem's warnings exactly as
-# noisy as they were, whatever process requires this file.
+# can't be scoped to a fork. Ruby gives Warning.warn no thread- or
+# fiber-scoped override point, only this one process-wide one, so any fix
+# has to live inside it.
+#
+# Two narrower predicates were tried live on this interpreter and rejected:
+#
+# - Toggling Warning[:experimental] off only around the read call races:
+#   that read yields to the reactor while it waits, and a *different*
+#   fiber's *unrelated* first-time experimental warning can fire while the
+#   flag is down and be silently eaten as collateral damage - confirmed live
+#   with a sibling fiber's unrelated Ractor "experimental API" warning
+#   vanishing while this fiber's toggle window was open.
+# - Filtering by message text alone, with no scoping at all, overcorrects
+#   the other way: it silences this exact message from *any* caller in the
+#   process, forever, not just this file's own read - confirmed live: a
+#   bare IO::Buffer.new outside this file's read produced no warning at all
+#   under a text-only filter, even though nothing here ever ran.
+#
+# Thread.current[] is fiber-local, not thread-wide (confirmed live under
+# Async::Task - a value set in one task's fiber is invisible to a sibling
+# task's fiber). Gating the text filter on a flag #fork_and_collect sets
+# only for the span of its own read, in that read's own fiber, gets both:
+# no cross-fiber collateral, and no suppression of this message from any
+# other caller, ever.
 module Warning
   def self.warn(message, category: nil)
-    return if message.include?("IO::Buffer is experimental")
+    return if Thread.current[:canary_pool_suppress_io_buffer_warning] && message.include?("IO::Buffer is experimental")
 
     super
   end
@@ -108,9 +125,14 @@ module Canary
         # Bounds the whole read, not just the wait for its first byte - a
         # descendant the submission leaves running holds the pipe's write
         # end open and would otherwise block `reader.read` past EOF forever.
-        data = Sync { |task| task.with_timeout(timeout) { reader.read } }
+        data = Sync do |task|
+          Thread.current[:canary_pool_suppress_io_buffer_warning] = true
+          task.with_timeout(timeout) { reader.read }
+        end
       rescue Async::TimeoutError
         return timeout_result(klass, pid, reader, timeout)
+      ensure
+        Thread.current[:canary_pool_suppress_io_buffer_warning] = false
       end
 
       reader.close
@@ -155,7 +177,22 @@ module Canary
 
     def marshalled_result(data, klass, status)
       io = StringIO.new(data)
-      result = Marshal.load(io)
+
+      begin
+        result = Marshal.load(io)
+      rescue ArgumentError
+        # A child killed mid-write (e.g. by the timeout path racing a large
+        # coverage payload) leaves a non-empty but truncated stream; Marshal
+        # rejects it rather than silently returning junk. Verified live on
+        # this interpreter: a truncated-but-structurally-plausible stream
+        # raises ArgumentError specifically ("marshal data too short"),
+        # which is why this stays paired with the real process status
+        # rather than falling into the generic branch below - and why it's
+        # scoped to just this call: a bug anywhere else in this method
+        # should surface as the diagnostic branch below, not get mistaken
+        # for a truncated wire.
+        return crash_result(klass, status)
+      end
 
       # The worker still has to hold *some* open pipe to the relay for the
       # length of the submission's run (it has to report a result
@@ -169,15 +206,6 @@ module Canary
       return wire_tampered_result(klass) unless io.eof?
 
       result
-    rescue ArgumentError
-      # A child killed mid-write (e.g. by the timeout path racing a large
-      # coverage payload) leaves a non-empty but truncated stream; Marshal
-      # rejects it rather than silently returning junk. Verified live on
-      # this interpreter: a truncated-but-structurally-plausible stream
-      # raises ArgumentError specifically ("marshal data too short"), which
-      # is why this stays paired with the real process status rather than
-      # falling into the generic branch below.
-      crash_result(klass, status)
     rescue StandardError, SystemStackError => e
       # Bytes that aren't a truncated dump of something real - garbage with
       # no valid version header, a corrupt embedded literal, a wire an

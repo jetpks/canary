@@ -90,6 +90,28 @@ class PoolFailureTest < Minitest::Test
     assert_match(/signal/, result.error)
   end
 
+  def test_an_argument_error_outside_marshal_load_is_reported_as_malformed_not_a_crash
+    # This is the one failure mode #marshalled_result can't be driven into by
+    # any real wire byte, since it's a defense against a *future* bug in the
+    # method's own body, not a currently-triggerable one - so it's reached
+    # directly, via `send`, rather than through the public #rollout. Only
+    # #wire_tampered_result is stubbed, to simulate that hypothetical bug;
+    # Marshal.load and #io.eof? - the behavior actually under test - run for
+    # real, on a real two-object wire.
+    pid = fork { exit!(0) }
+    _pid, status = Process.wait2(pid)
+    two_objects_on_the_wire = Marshal.dump(:first) + Marshal.dump(:second)
+
+    @pool.define_singleton_method(:wire_tampered_result) do |_klass|
+      raise ArgumentError, "injected: a bug elsewhere in marshalled_result, not Marshal.load"
+    end
+
+    result = @pool.send(:marshalled_result, two_objects_on_the_wire, Canary::Adapters::MinitestAdapter, status)
+
+    assert_match(/ArgumentError/, result.error)
+    refute_match(/exited with status|terminated by signal/, result.error)
+  end
+
   def test_a_normal_rollout_is_still_a_success
     result = @pool.rollout(
       adapter: :minitest,
