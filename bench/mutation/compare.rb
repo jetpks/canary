@@ -7,6 +7,18 @@
 # bundler/inline so it can run with plain `ruby`, independent of the repo's
 # own Gemfile.
 #
+# I08 D5: this used to run mutant, then always mutineer, every invocation -
+# so any systematic effect of run position (warm disk cache, warm CPU ramp,
+# see tracepoint_bench.rb's header) could only ever land on the same tool,
+# which makes any ms/mutant delta between them uncitable under the standing
+# order-alternation rule (Grounds G6) regardless of which tool "won". Fixed
+# the same way tracepoint_bench.rb and relay_cost_bench.rb both fix it: every
+# arm runs once per round, in an order rotated by one position per round,
+# across a whole number of ARM_COUNT-sized periods, with a printed position
+# ledger and a raise on nonzero mean-position spread proving the balance
+# rather than asserting it. This makes a future rate measurement valid; it
+# does not itself take or report one (see the run section below).
+#
 # Usage:
 #   ruby bench/mutation/compare.rb           # full run against the whole target
 #   ruby bench/mutation/compare.rb --smoke   # tiny scope, completes in seconds
@@ -252,14 +264,53 @@ Dir.chdir(TARGET_DIR) do
   system("ruby", "-Ilib", "-Itest", "test/target_test.rb", out: File::NULL, err: File::NULL)
 end
 
-mutant_result   = run_mutant(timeout_s: TIMEOUT_S, smoke: SMOKE)
-mutineer_result = run_mutineer(timeout_s: TIMEOUT_S, smoke: SMOKE)
+# --- arm rotation (I08 D5) --------------------------------------------------
+ARMS = [
+  { key: :mutant,   run: ->(timeout_s, smoke) { run_mutant(timeout_s: timeout_s, smoke: smoke) } },
+  { key: :mutineer, run: ->(timeout_s, smoke) { run_mutineer(timeout_s: timeout_s, smoke: smoke) } },
+].freeze
+ARM_COUNT = ARMS.length
 
-puts "=== mutant ==="
-pp mutant_result
+# One full period (ARM_COUNT rounds) puts every arm at every rotation offset
+# exactly once, so its mean measurement position is identical across arms;
+# two periods in the full run for a bit more depth, one for smoke since it
+# only needs to prove the schedule and the assertions still fire (same
+# reasoning as tracepoint_bench.rb's REPEATS).
+ROUNDS = ARM_COUNT * (SMOKE ? 1 : 2)
+
+results_by_key = ARMS.each_with_object({}) { |a, h| h[a[:key]] = [] }
+position_log   = ARMS.each_with_object({}) { |a, h| h[a[:key]] = [] }
+
+order_labels = ROUNDS.times.map { |r| "round#{r + 1}=#{ARMS.rotate(r).map { |a| a[:key] }.join(">")}" }
+puts "=== Arm order per round (rotated by one position per round) ==="
+puts order_labels.join("  ")
 puts
-puts "=== mutineer ==="
-pp mutineer_result
+
+ROUNDS.times do |r|
+  ARMS.rotate(r).each_with_index do |arm, position|
+    result = arm[:run].call(TIMEOUT_S, SMOKE)
+    results_by_key[arm[:key]] << result
+    position_log[arm[:key]] << position
+    puts "=== round #{r + 1}, position #{position}: #{arm[:key]} ==="
+    pp result
+    puts
+  end
+end
+
+# The deterministic proof of balance (Grounds G6): exactly where every arm
+# landed in its round, independent of any timing, checkable by reading this
+# table.
+puts "== position ledger (0 = measured first/coldest that round, #{ARM_COUNT - 1} = measured last/warmest) =="
+mean_positions = ARMS.each_with_object({}) do |arm, h|
+  positions = position_log[arm[:key]]
+  mean = positions.sum.to_f / positions.length
+  h[arm[:key]] = mean
+  puts format("%-10s positions=%-30s mean=%.3f", arm[:key], positions.inspect, mean)
+end
+spread = mean_positions.values.max - mean_positions.values.min
+puts format("Mean-position spread across arms: %.6f slots (0.0 = perfectly balanced, ROUNDS=%d over ARM_COUNT=%d)",
+  spread, ROUNDS, ARM_COUNT)
+raise "compare.rb: rotation is not balanced: spread=#{spread} (ROUNDS=#{ROUNDS} must be a multiple of ARM_COUNT=#{ARM_COUNT})" unless spread.abs < 1e-9
 puts
 
 puts "=== mutant licensing determination ==="
@@ -271,6 +322,6 @@ puts license[:verbatim_opensource_message]
 puts "----------------------------------------------------"
 puts
 
-ok = mutant_result[:ok] && mutineer_result[:ok]
-puts ok ? "RESULT: both tools produced and killed mutants." : "RESULT: at least one tool FAILED (see above)."
+ok = results_by_key.values.flatten.all? { |r| r[:ok] }
+puts ok ? "RESULT: both tools produced and killed mutants on every round." : "RESULT: at least one tool FAILED on at least one round (see above)."
 exit(ok ? 0 : 1)
