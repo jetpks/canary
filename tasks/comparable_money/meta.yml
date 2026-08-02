@@ -1,0 +1,3 @@
+category: the Comparable protocol and <=> contracts
+adapter: rspec
+statement: Implement Money, including Comparable, with a <=> that orders by numeric cents (not by string comparison).

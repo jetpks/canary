@@ -1,0 +1,3 @@
+category: block/proc/lambda semantics
+adapter: minitest
+statement: Implement SafeCaller.call, which falls back to a default when a lambda's argument count would raise ArgumentError but calls a Proc as-is (Procs never raise on arity mismatch).

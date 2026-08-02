@@ -1,0 +1,3 @@
+category: block/proc/lambda semantics
+adapter: rspec
+statement: Implement Memoizer.wrap(&computation), a closure over mutable state that calls computation at most once and caches even a falsy result.

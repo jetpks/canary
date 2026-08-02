@@ -1,0 +1,3 @@
+category: exception hierarchies, ensure ordering, retry, custom error classes
+adapter: minitest
+statement: Implement Retrier.call(max_attempts:), which retries only TransientError (not PermanentError) up to max_attempts before re-raising.
