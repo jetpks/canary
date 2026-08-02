@@ -1,5 +1,7 @@
 require "test_helper"
 require "tempfile"
+require "stringio"
+require "rbconfig"
 
 # Proves, with real submissions in real forked children rather than
 # assertion-free narration, that Pool#rollout survives every terminal
@@ -97,6 +99,32 @@ class PoolFailureTest < Minitest::Test
     assert result.ok?
     refute result.crash?
     refute result.timeout?
+  end
+
+  def test_requiring_canary_does_not_mutate_warning_experimental_for_the_host
+    # A fresh subprocess that does nothing but require the gem - reading the
+    # flag inside this process wouldn't prove anything, since test_helper
+    # already required canary long before this test method ran.
+    output = IO.popen([RbConfig.ruby, "-Ilib", "-e", "require 'canary'; print Warning[:experimental]"], &:read)
+
+    assert_equal "true", output
+  end
+
+  def test_a_normal_rollout_does_not_leak_the_io_buffer_experimental_warning
+    original_stderr = $stderr
+    $stderr = StringIO.new
+
+    result = @pool.rollout(
+      adapter: :minitest,
+      submission_path: File.expand_path("minitest_submission.rb", FIXTURES)
+    )
+    captured = $stderr.string
+    $stderr = original_stderr
+
+    assert result.ok?
+    refute_match(/IO::Buffer/, captured)
+  ensure
+    $stderr = original_stderr
   end
 
   def test_killed_and_crashed_children_are_reaped_and_leave_no_zombies

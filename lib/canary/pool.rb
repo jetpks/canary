@@ -5,9 +5,22 @@ require "stringio"
 
 # The async gem's fiber scheduler routes blocking reads through IO::Buffer,
 # which is still tagged experimental upstream; it has nothing to do with any
-# code in this file. Silencing only this category (not warnings generally)
-# keeps every pool process quiet without hiding an unrelated real warning.
-Warning[:experimental] = false
+# code in this file. The warning fires in the parent, from
+# #fork_and_collect's own `reader.read` below, not in a forked child, so it
+# can't be scoped to a fork - and toggling Warning[:experimental] around
+# just that call isn't safe either: that read yields to the async reactor
+# while it waits, so another fiber's unrelated experimental warning could be
+# suppressed (or this one reintroduced) depending on scheduling. Filtering
+# this one message by text, instead of disabling the whole :experimental
+# category, keeps every other consumer of the gem's warnings exactly as
+# noisy as they were, whatever process requires this file.
+module Warning
+  def self.warn(message, category: nil)
+    return if message.include?("IO::Buffer is experimental")
+
+    super
+  end
+end
 
 module Canary
   # A fork-preloaded rollout pool.
@@ -159,8 +172,23 @@ module Canary
     rescue ArgumentError
       # A child killed mid-write (e.g. by the timeout path racing a large
       # coverage payload) leaves a non-empty but truncated stream; Marshal
-      # rejects it rather than silently returning junk.
+      # rejects it rather than silently returning junk. Verified live on
+      # this interpreter: a truncated-but-structurally-plausible stream
+      # raises ArgumentError specifically ("marshal data too short"), which
+      # is why this stays paired with the real process status rather than
+      # falling into the generic branch below.
       crash_result(klass, status)
+    rescue StandardError, SystemStackError => e
+      # Bytes that aren't a truncated dump of something real - garbage with
+      # no valid version header, a corrupt embedded literal, a wire an
+      # attacker wrote directly rather than one a legitimate write got cut
+      # short - can make Marshal.load raise almost anything. Fuzzed this
+      # live rather than guessing: TypeError, EOFError and RegexpError all
+      # showed up (all StandardError, caught above), and a deeply-nested
+      # array wire raises SystemStackError, which isn't - hence naming it
+      # explicitly rather than trusting a bare `rescue` to catch everything
+      # Marshal.load can throw at us.
+      malformed_wire_result(klass, e)
     end
 
     def wire_tampered_result(klass)
@@ -172,6 +200,19 @@ module Canary
         total: 0,
         outcome: :crash,
         error: "reporting pipe carried more than one object; discarding an untrustworthy result"
+      )
+    end
+
+    def malformed_wire_result(klass, error)
+      RolloutResult.new(
+        adapter: klass::NAME,
+        examples: [],
+        passed: 0,
+        failed: 0,
+        total: 0,
+        outcome: :crash,
+        error: "reporting pipe carried data Marshal.load could not parse " \
+               "(#{error.class}: #{error.message}); discarding an untrustworthy result"
       )
     end
 
