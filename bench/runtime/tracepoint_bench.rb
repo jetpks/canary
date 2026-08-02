@@ -45,6 +45,21 @@
 # inline-cache state regardless of what ran between it and this row's last
 # repeat.
 #
+# That balance claim only holds once REPEATS is a full multiple of the arm
+# count: rotating by one position per round visits a different residue of
+# "how far from round-start" for each arm, and a residue class only becomes
+# uniform across arms once every rotation offset 0..ARM_COUNT-1 has occurred
+# the same number of times. REPEATS=5 over ARM_COUNT=7 (the previous values)
+# stops mid-period -- every arm gets 5 of the 7 possible offsets, but *which*
+# 5 depends on the arm's starting index, leaving a 2.0-slot mean-position
+# spread (architect-computed, reproduced by the position ledger this script
+# prints below at the old REPEATS=5 -- verify by temporarily setting
+# REPEATS=5 without also raising ARM_COUNT, see AC2-style revert note in the
+# builder report). REPEATS is now forced to ARM_COUNT * whole-number-of-
+# periods so the spread is exactly 0.0, not just small; see the position
+# ledger and the raise right after `rows` is built below, which fails the run
+# if REPEATS is ever changed to a non-multiple again.
+#
 # The `untargeted` variants are the deliverable: a TracePoint targeted at a
 # COLD method (never called by the hot loop) while the hot, UNTARGETED loop
 # runs at full size. This measures dispatch cost on non-target code paths,
@@ -57,7 +72,19 @@
 require "etc"
 
 SMOKE = ARGV.include?("--smoke")
-REPEATS = SMOKE ? 3 : 5
+# ARM_COUNT must equal rows.length below (asserted once `rows` is built).
+# REPEATS is forced to a multiple of it: rotating a 7-arm schedule by one
+# position per round only gives every arm an equal mean measurement position
+# once a full period of ARM_COUNT rounds has elapsed (rotating by r for
+# r=0...ARM_COUNT-1 visits every residue mod ARM_COUNT exactly once; any
+# shorter run -- REPEATS=5 over 7 arms, as this file had -- covers a
+# different 5-of-7 residues per arm and leaves a position-mean spread, 2.0
+# slots at REPEATS=5, architect-computed and reproduced below). Two periods
+# in the full run for a bit more statistical depth than the bare minimum;
+# smoke gets exactly one period since it only needs to prove the schedule
+# and the assertions still fire.
+ARM_COUNT = 7
+REPEATS = ARM_COUNT * (SMOKE ? 1 : 2)
 # The host-variance control below needs more samples than a table row to get a
 # stable min/max range (range is a noisy estimator at N=5 -- two back-to-back
 # runs at N=5 gave 2.9% and 6.9% for the same host). Cheap since it reuses the
@@ -238,14 +265,38 @@ rows = [
     measure: -> { measure_targeted(:line, COLD_TARGET_METHOD, inner_untargeted, outer, want_fired: false) } },
 ].freeze
 
+raise "ARM_COUNT (#{ARM_COUNT}) must equal rows.length (#{rows.length}) for the rotation below to balance" unless rows.length == ARM_COUNT
+
 repeats_data = rows.each_with_object({}) { |row, h| h[row[:key]] = [] }
+# position_log[key] << p records, for every repeat of that arm, which slot
+# (0 = measured first/coldest that round, ARM_COUNT-1 = measured last/warmest)
+# it landed in -- the raw data the position ledger below prints.
+position_log = rows.each_with_object({}) { |row, h| h[row[:key]] = [] }
 
 REPEATS.times do |r|
-  rows.rotate(r).each do |row|
+  rows.rotate(r).each_with_index do |row, position|
     3.times { Work.run(row[:inner]) } # warmup, identical work, no TracePoint -- run fresh before every repeat
     repeats_data[row[:key]] << row[:measure].call
+    position_log[row[:key]] << position
   end
 end
+
+# The deterministic proof of balance (Grounds G4 / AC9): under load a ~25%
+# position effect is invisible beneath a +/-10-36% timing noise floor, but
+# where every arm actually landed in the round each repeat is exact and
+# checkable by reading this table, independent of any timing.
+puts "== position ledger (0 = measured first/coldest that round, #{ARM_COUNT - 1} = measured last/warmest) =="
+mean_positions = rows.each_with_object({}) do |row, h|
+  positions = position_log[row[:key]]
+  mean = positions.sum.to_f / positions.length
+  h[row[:key]] = mean
+  puts format("%-18s positions=%-40s mean=%.3f", row[:key], positions.inspect, mean)
+end
+spread = mean_positions.values.max - mean_positions.values.min
+puts format("Mean-position spread across arms: %.6f slots (0.0 = perfectly balanced, REPEATS=%d over ARM_COUNT=%d)",
+  spread, REPEATS, ARM_COUNT)
+raise "rotation is not balanced: spread=#{spread} (REPEATS=#{REPEATS} must be a multiple of ARM_COUNT=#{ARM_COUNT})" unless spread.abs < 1e-9
+puts
 
 baseline_stats = report_row("baseline (no TracePoint, interleaved)", repeats_data[:baseline], outer * inner_baseline)
 puts
