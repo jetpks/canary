@@ -56,4 +56,48 @@ class CoverageOrderingTest < Minitest::Test
     assert lines.compact.sum.positive?,
       "expected at least one executed, instrumented line in #{TARGET}"
   end
+
+  # BRIEF §4.4: a rollout's Coverage.result contains the submission and
+  # nothing else. Proven here against the real pool, not against adapters in
+  # isolation, since the invariant is about what a fork actually compiles.
+  def test_rspec_rollout_coverage_contains_only_the_submission
+    pool = Canary::Pool.new(adapters: [:rspec])
+    path = File.expand_path("fixtures/rspec_submission.rb", __dir__)
+
+    result = pool.rollout(adapter: :rspec, submission_path: path)
+
+    assert_equal [path], result.coverage.keys
+  end
+
+  # A fix that only preloaded the "eq" matcher's own lazy require would pass
+  # the test above without closing the general case. This fixture uses a
+  # different matcher (include) and a mock, neither preloaded by name.
+  def test_rspec_rollout_coverage_excludes_other_matchers_and_mocks
+    pool = Canary::Pool.new(adapters: [:rspec])
+    path = File.expand_path("fixtures/rspec_other_matchers_submission.rb", __dir__)
+
+    result = pool.rollout(adapter: :rspec, submission_path: path)
+
+    assert_equal [path], result.coverage.keys
+  end
+
+  def test_minitest_rollout_coverage_contains_only_the_submission
+    pool = Canary::Pool.new(adapters: [:minitest])
+    path = File.expand_path("fixtures/minitest_submission.rb", __dir__)
+
+    result = pool.rollout(adapter: :minitest, submission_path: path)
+
+    assert_equal [path], result.coverage.keys
+  end
+
+  # Minitest::Test.make_my_diffs_pretty! lazily requires "pp"; a submission
+  # that calls it must not leak pp/prettyprint into its own coverage either.
+  def test_minitest_rollout_coverage_excludes_pretty_diff_lazy_require
+    pool = Canary::Pool.new(adapters: [:minitest])
+    path = File.expand_path("fixtures/minitest_pretty_diff_submission.rb", __dir__)
+
+    result = pool.rollout(adapter: :minitest, submission_path: path)
+
+    assert_equal [path], result.coverage.keys
+  end
 end

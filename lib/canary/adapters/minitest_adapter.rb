@@ -11,8 +11,14 @@ module Canary
 
       # Preloads Minitest itself. Called once in the parent, before
       # Coverage.start, so none of this file's parsing is instrumented.
+      #
+      # "pp" is preloaded too: Minitest::Test.make_my_diffs_pretty! (a real,
+      # if rare, submission-facing API) lazily requires it, and a submission
+      # that calls it would otherwise leak pp/prettyprint into its own
+      # coverage.
       def self.preload
         require "minitest"
+        require "pp"
         self
       end
 
