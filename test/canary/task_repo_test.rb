@@ -13,7 +13,7 @@ class TaskRepoTest < Minitest::Test
   end
 
   def test_the_corpus_meets_the_shape_floor
-    assert_operator @entries.size, :>=, 15
+    assert_operator @entries.size, :>=, 14
     assert_operator @entries.map(&:category).uniq.size, :>=, 12
     assert_includes @entries.map(&:adapter), :rspec
   end
@@ -92,16 +92,6 @@ class TaskRepoTest < Minitest::Test
 
     assert_broken_fails_on(entry, "missing_respond_to_missing", "OpenRecordGraderTest#test_responds_to_known_and_settable_attributes")
     assert_broken_fails_on(entry, "write_path_no_ops", "OpenRecordGraderTest#test_writes_a_new_attribute_dynamically")
-  end
-
-  def test_refinement_hollow_check_reference_passes_and_broken_solutions_fail_differently
-    entry = entry("refinement_hollow_check")
-
-    reference = @pool.rollout_task(task: entry.reference)
-    assert_result reference, total: 4, passed: 4, failed: 0
-
-    assert_broken_fails_on(entry, "global_monkeypatch", "HollowCheckerGraderTest#test_the_refinement_does_not_leak_outside_its_using_scope")
-    assert_broken_fails_on(entry, "using_forgotten", "HollowCheckerGraderTest#test_hollow_for_an_empty_string")
   end
 
   def test_string_attr_parser_reference_passes_and_broken_solutions_fail_differently

@@ -2,7 +2,7 @@
 # frozen_string_literal: true
 
 # Answers BRIEF Sec6.4's tool-coverage question with deterministic counts: for
-# each of the 15 tasks under tasks/**, how many subjects does each tool's
+# each of the 14 tasks under tasks/**, how many subjects does each tool's
 # STATIC discovery find, and how many mutations does it generate from them --
 # before either tool runs a single test. I09 established, live, two
 # asymmetric blind spots: mutant finds 0 subjects on struct_vector (a
@@ -11,8 +11,10 @@
 # there; and mutineer finds 0 mutations on ensure_return_swallows_exception
 # (an `ensure` clause) while mutant finds 13. This script confirms or
 # contradicts those pairs live and extends the same measurement to the rest
-# of the corpus, including `refine` (refinement_hollow_check) and `prepend`
-# (prepend_logging_wrapper), which I08/I09 did not check.
+# of the corpus, including `prepend` (prepend_logging_wrapper), which I08/I09
+# did not check. (refinement_hollow_check, which this comment used to name
+# alongside it, was retired in I12: no observable, mechanism-silent grader
+# could be built for a `refine`-only trap - see I12's report.)
 #
 # Deliberately does NOT run either tool's mutation-KILLING step -- no test
 # execution, no scores, no kills, no wall-clock -- only static/dry-run
