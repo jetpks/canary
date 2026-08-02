@@ -11,6 +11,17 @@
 # the cost of the same unit, just accumulated over a different number of
 # repetitions to keep expensive variants (global :line) within a sane runtime.
 #
+# Every row runs REPEATS times and reports min/median/max, not a single shot.
+# Host run-to-run variance is measured separately (see the control step right
+# before the `untargeted` rows below), via CONTROL_REPEATS forked child
+# processes doing identical work with no TracePoint -- Process.fork gives each
+# repeat its own OS scheduling entity (core, cache state, clock ramp), which is
+# what turned out to matter: repeats taken back-to-back inside one process, or
+# measured early in the script before it warms up, both undercounted the real
+# drift. The untargeted rows' multiplier is checked against that figure before
+# being printed, so a ratio close to 1.0x is reported as "within host
+# variance" instead of a spuriously precise number.
+#
 # The `untargeted` variants are the deliverable: a TracePoint targeted at a
 # COLD method (never called by the hot loop) while the hot, UNTARGETED loop
 # runs at full size. This measures dispatch cost on non-target code paths,
@@ -24,6 +35,12 @@ require "benchmark"
 require "etc"
 
 SMOKE = ARGV.include?("--smoke")
+REPEATS = SMOKE ? 3 : 5
+# The host-variance control below needs more samples than a table row to get a
+# stable min/max range (range is a noisy estimator at N=5 -- two back-to-back
+# runs at N=5 gave 2.9% and 6.9% for the same host). Cheap since it reuses the
+# small `inner_untargeted` work size.
+CONTROL_REPEATS = SMOKE ? REPEATS : 20
 
 module Work
   def self.step(a, b)
@@ -51,38 +68,95 @@ end
 TARGET_METHOD = Work.method(:step)
 COLD_TARGET_METHOD = Work.method(:cold_method)
 
-def timed(label, outer)
-  fired = 0
+# Runs Work.run(inner) `outer` times back to back, timing the whole batch.
+# Returns [elapsed_seconds, last_return_value] -- Work.run is deterministic
+# for a given `inner`, so the last call's return value is enough to check.
+def measure_once(inner, outer)
+  result = nil
   t0 = Process.clock_gettime(Process::CLOCK_MONOTONIC)
-  yield(-> { fired += 1 })
+  outer.times { result = Work.run(inner) }
   t1 = Process.clock_gettime(Process::CLOCK_MONOTONIC)
-  { label: label, outer: outer, elapsed: t1 - t0, fired: fired }
+  [t1 - t0, result]
 end
 
-# unit_count = total number of Work.step calls performed (outer * inner).
-# ns/op and ops/sec are per Work.step call, so every row -- regardless of its
-# `inner` -- reports the cost of the same unit of work.
-def report_row(result, unit_count, baseline_ns_per_op, expected_fired_zero: false, no_tracepoint: false)
-  ns_per_op = (result[:elapsed] / unit_count) * 1e9
-  ops_per_sec = unit_count / result[:elapsed]
-  multiplier = baseline_ns_per_op ? (ns_per_op / baseline_ns_per_op) : 1.0
-  asserted = if no_tracepoint
-    unit_count.positive? # no handler to fire; assert the work itself ran
-  elsif expected_fired_zero
-    result[:fired] == 0
-  else
-    result[:fired] > 0
+def stats(values)
+  sorted = values.sort
+  { min: sorted.first, median: sorted[sorted.length / 2], max: sorted.last }
+end
+
+# Range (max - min) is fragile once there's enough data for a single
+# scheduling outlier to show up -- observed live: one of 20 forked control
+# reps got scheduled badly and its outlier alone inflated the raw range to
+# +/-56.6%, which then swallowed a genuine ~2x effect (targeted vs global
+# :line) into a false "no measurable difference". Trim the single highest and
+# lowest sample before taking the range, once there's enough data for that to
+# still be meaningful, so one bad rep can't dominate every comparison below.
+def spread_pct(values)
+  sorted = values.sort
+  trimmed = sorted.length >= 5 ? sorted[1..-2] : sorted
+  ((trimmed.max - trimmed.min) / sorted[sorted.length / 2]) * 100.0
+end
+
+# Runs Work.run(inner)-equivalent work in a forked child process, no
+# TracePoint, and reports its elapsed time back over a pipe. Used only to
+# measure host run-to-run variance: each fork is a distinct OS process, so
+# this captures core migration / scheduling / clock-ramp drift that repeats
+# inside a single process do not.
+def measure_in_child(inner, outer)
+  reader, writer = IO.pipe
+  pid = Process.fork do
+    reader.close
+    outer.times { Work.run(inner) } # warmup, identical to the in-process rows
+    t0 = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+    outer.times { Work.run(inner) }
+    t1 = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+    writer.write((t1 - t0).to_s)
+    writer.close
   end
-  printf(
-    "%-32s %14.1f ns/op %16.1f ops/sec %10.2fx   (fired=%d, asserted=%s)\n",
-    result[:label], ns_per_op, ops_per_sec, multiplier, result[:fired], asserted
-  )
-  raise "#{result[:label]}: success assertion failed (fired=#{result[:fired]}, expected_zero=#{expected_fired_zero})" unless asserted
-
-  ns_per_op
+  writer.close
+  elapsed = reader.read.to_f
+  reader.close
+  Process.wait(pid)
+  elapsed
 end
 
-# outer = number of WORK.run calls, inner = loop size per call.
+# unit_count = total number of Work.step calls performed per repeat
+# (outer * inner). ns/op and ops/sec are per Work.step call, so every row --
+# regardless of its `inner` -- reports the cost of the same unit of work.
+#
+# repeats_data: array of REPEATS hashes {elapsed:, fired:, ok:}, one per
+# repeat -- `ok` is that repeat's own success assertion (fired count or, for
+# the baseline, the work's actual checksum).
+def report_row(label, repeats_data, unit_count, baseline_stats: nil, host_variance_pct: nil)
+  ns_values = repeats_data.map { |r| (r[:elapsed] / unit_count) * 1e9 }
+  ns_stats = stats(ns_values)
+  ops_per_sec = 1e9 / ns_stats[:median]
+
+  fired_values = repeats_data.map { |r| r[:fired] }
+  fired_str = fired_values.uniq.length == 1 ? fired_values.first.to_s : "#{fired_values.min}..#{fired_values.max}"
+  all_ok = repeats_data.all? { |r| r[:ok] }
+
+  multiplier_str = if baseline_stats.nil?
+    "1.00x (baseline)"
+  else
+    ratio = ns_stats[:median] / baseline_stats[:median]
+    if host_variance_pct && (ratio - 1.0).abs <= host_variance_pct / 100.0
+      format("~1.00x (within +/-%.1f%% host variance)", host_variance_pct)
+    else
+      format("%.2fx", ratio)
+    end
+  end
+
+  printf(
+    "%-32s min=%8.1f median=%8.1f max=%8.1f ns/op   ops/sec(median)=%13.1f   %-34s (fired=%s, asserted=%s)\n",
+    label, ns_stats[:min], ns_stats[:median], ns_stats[:max], ops_per_sec, multiplier_str, fired_str, all_ok
+  )
+  raise "#{label}: success assertion failed on at least one of #{REPEATS} repeats (fired=#{fired_str})" unless all_ok
+
+  ns_stats
+end
+
+# outer = number of Work.run calls, inner = loop size per call.
 # untargeted variants get their own (larger) inner since they're cheap.
 outer, inner_baseline, inner_call, inner_line, inner_untargeted = if SMOKE
   [3, 2_000, 500, 50, 500]
@@ -93,114 +167,148 @@ end
 puts "Ruby: #{RUBY_DESCRIPTION}"
 puts "Platform: #{RUBY_PLATFORM}  cores: #{Etc.nprocessors}"
 puts "outer=#{outer} inner_baseline=#{inner_baseline} inner_call=#{inner_call} " \
-     "inner_line=#{inner_line} inner_untargeted=#{inner_untargeted}"
+     "inner_line=#{inner_line} inner_untargeted=#{inner_untargeted}  REPEATS=#{REPEATS}"
 puts "One iteration = Work.run(inner), a loop calling Work.step(a,b) `inner` times."
+puts "Each row runs REPEATS=#{REPEATS} independent repeats and reports min/median/max."
 puts "ns/op below = elapsed / (outer * inner), i.e. cost per Work.step call -- " \
      "the traced unit -- so rows with different `inner` remain comparable."
 puts
 
 # --- baseline: no TracePoint at all ---
+baseline_checksum = (inner_baseline * (inner_baseline - 1)) / 2
 3.times { Work.run(inner_baseline) } # warmup, identical across all variants below
-baseline = timed("baseline (no TracePoint)", outer) do |_bump|
-  outer.times { Work.run(inner_baseline) }
+baseline_repeats = Array.new(REPEATS) do
+  elapsed, result = measure_once(inner_baseline, outer)
+  { elapsed: elapsed, fired: 0, ok: result == baseline_checksum }
 end
-baseline_ns = report_row(baseline, outer * inner_baseline, nil, no_tracepoint: true)
+baseline_stats = report_row("baseline (no TracePoint)", baseline_repeats, outer * inner_baseline)
+puts
 
 # --- global :call ---
 3.times { Work.run(inner_call) }
-gc_fired = 0
-tp_global_call = TracePoint.new(:call) { |_tp| gc_fired += 1 }
-tp_global_call.enable
-global_call = timed("global :call", outer) do |_bump|
-  outer.times { Work.run(inner_call) }
+global_call_repeats = Array.new(REPEATS) do
+  fired = 0
+  tp = TracePoint.new(:call) { |_tp| fired += 1 }
+  tp.enable
+  elapsed, = measure_once(inner_call, outer)
+  tp.disable
+  { elapsed: elapsed, fired: fired, ok: fired > 0 }
 end
-tp_global_call.disable
-global_call[:fired] = gc_fired
-global_call_ns = report_row(global_call, outer * inner_call, baseline_ns)
+global_call_stats = report_row("global :call", global_call_repeats, outer * inner_call,
+  baseline_stats: baseline_stats)
 
 # --- targeted :call (target: the Work.step method -- every call is a hit) ---
 3.times { Work.run(inner_call) }
-tc_fired = 0
-tp_target_call = TracePoint.new(:call) { |_tp| tc_fired += 1 }
-tp_target_call.enable(target: TARGET_METHOD)
-target_call = timed("targeted :call (hot target)", outer) do |_bump|
-  outer.times { Work.run(inner_call) }
+target_call_repeats = Array.new(REPEATS) do
+  fired = 0
+  tp = TracePoint.new(:call) { |_tp| fired += 1 }
+  tp.enable(target: TARGET_METHOD)
+  elapsed, = measure_once(inner_call, outer)
+  tp.disable
+  { elapsed: elapsed, fired: fired, ok: fired > 0 }
 end
-tp_target_call.disable
-target_call[:fired] = tc_fired
-target_call_ns = report_row(target_call, outer * inner_call, baseline_ns)
+target_call_stats = report_row("targeted :call (hot target)", target_call_repeats, outer * inner_call,
+  baseline_stats: baseline_stats)
 
 # --- global :line ---
 3.times { Work.run(inner_line) }
-gl_fired = 0
-tp_global_line = TracePoint.new(:line) { |_tp| gl_fired += 1 }
-tp_global_line.enable
-global_line = timed("global :line", outer) do |_bump|
-  outer.times { Work.run(inner_line) }
+global_line_repeats = Array.new(REPEATS) do
+  fired = 0
+  tp = TracePoint.new(:line) { |_tp| fired += 1 }
+  tp.enable
+  elapsed, = measure_once(inner_line, outer)
+  tp.disable
+  { elapsed: elapsed, fired: fired, ok: fired > 0 }
 end
-tp_global_line.disable
-global_line[:fired] = gl_fired
-global_line_ns = report_row(global_line, outer * inner_line, baseline_ns)
+global_line_stats = report_row("global :line", global_line_repeats, outer * inner_line,
+  baseline_stats: baseline_stats)
 
 # --- targeted :line (target: the Work.step method -- every call is a hit) ---
 3.times { Work.run(inner_line) }
-tl_fired = 0
-tp_target_line = TracePoint.new(:line) { |_tp| tl_fired += 1 }
-tp_target_line.enable(target: TARGET_METHOD)
-target_line = timed("targeted :line (hot target)", outer) do |_bump|
-  outer.times { Work.run(inner_line) }
+target_line_repeats = Array.new(REPEATS) do
+  fired = 0
+  tp = TracePoint.new(:line) { |_tp| fired += 1 }
+  tp.enable(target: TARGET_METHOD)
+  elapsed, = measure_once(inner_line, outer)
+  tp.disable
+  { elapsed: elapsed, fired: fired, ok: fired > 0 }
 end
-tp_target_line.disable
-target_line[:fired] = tl_fired
-target_line_ns = report_row(target_line, outer * inner_line, baseline_ns)
+target_line_stats = report_row("targeted :line (hot target)", target_line_repeats, outer * inner_line,
+  baseline_stats: baseline_stats)
 
 puts
+
+# --- host run-to-run variance control ---
+# No TracePoint, repeated in CONTROL_REPEATS separate forked processes rather
+# than back-to-back in this one -- each fork is its own OS scheduling entity,
+# which is where the real drift showed up (see header comment). Measured here,
+# right before the untargeted rows it validates, rather than up front: this
+# process has already run several seconds of sustained TracePoint work by this
+# point, and that position turned out to matter -- a control measured before
+# that warm-up understated the noise floor these rows actually see.
+control_ns = Array.new(CONTROL_REPEATS) { measure_in_child(inner_untargeted, outer) / (outer * inner_untargeted) * 1e9 }
+control_stats = stats(control_ns)
+raw_variance_pct = ((control_stats[:max] - control_stats[:min]) / control_stats[:median]) * 100.0
+host_variance_pct = spread_pct(control_ns)
+puts format(
+  "Host run-to-run variance control (%d separate forked processes, identical work / no " \
+  "TracePoint, measured at this point in the run): raw min=%.1f median=%.1f max=%.1f ns/op " \
+  "(+/-%.1f%%); using +/-%.1f%% (top/bottom rep trimmed, guards against a single scheduling " \
+  "outlier) for the comparisons below",
+  CONTROL_REPEATS, control_stats[:min], control_stats[:median], control_stats[:max],
+  raw_variance_pct, host_variance_pct
+)
+puts
+
 puts "== untargeted: targeted TracePoint on a COLD method, hot loop runs untargeted =="
 puts "(this is the measurement the project needs: TracePoint#enable(target:) is"
 puts " supposed to be near-free on code paths that are not the target)"
 
 # --- untargeted :call ---
 3.times { Work.run(inner_untargeted) }
-uc_fired = 0
-tp_untargeted_call = TracePoint.new(:call) { |_tp| uc_fired += 1 }
-tp_untargeted_call.enable(target: COLD_TARGET_METHOD)
-untargeted_call = timed("untargeted :call", outer) do |_bump|
-  outer.times { Work.run(inner_untargeted) }
+untargeted_call_repeats = Array.new(REPEATS) do
+  fired = 0
+  tp = TracePoint.new(:call) { |_tp| fired += 1 }
+  tp.enable(target: COLD_TARGET_METHOD)
+  elapsed, = measure_once(inner_untargeted, outer)
+  tp.disable
+  { elapsed: elapsed, fired: fired, ok: fired == 0 }
 end
-tp_untargeted_call.disable
-untargeted_call[:fired] = uc_fired
-untargeted_call_ns = report_row(untargeted_call, outer * inner_untargeted, baseline_ns, expected_fired_zero: true)
+untargeted_call_stats = report_row("untargeted :call", untargeted_call_repeats, outer * inner_untargeted,
+  baseline_stats: baseline_stats, host_variance_pct: host_variance_pct)
 
 # --- untargeted :line ---
 3.times { Work.run(inner_untargeted) }
-ul_fired = 0
-tp_untargeted_line = TracePoint.new(:line) { |_tp| ul_fired += 1 }
-tp_untargeted_line.enable(target: COLD_TARGET_METHOD)
-untargeted_line = timed("untargeted :line", outer) do |_bump|
-  outer.times { Work.run(inner_untargeted) }
+untargeted_line_repeats = Array.new(REPEATS) do
+  fired = 0
+  tp = TracePoint.new(:line) { |_tp| fired += 1 }
+  tp.enable(target: COLD_TARGET_METHOD)
+  elapsed, = measure_once(inner_untargeted, outer)
+  tp.disable
+  { elapsed: elapsed, fired: fired, ok: fired == 0 }
 end
-tp_untargeted_line.disable
-untargeted_line[:fired] = ul_fired
-untargeted_line_ns = report_row(untargeted_line, outer * inner_untargeted, baseline_ns, expected_fired_zero: true)
+untargeted_line_stats = report_row("untargeted :line", untargeted_line_repeats, outer * inner_untargeted,
+  baseline_stats: baseline_stats, host_variance_pct: host_variance_pct)
 
 puts
 puts "== targeted vs global summary (per-Work.step-call cost, both already equal-unit) =="
 
-def compare(label_a, ns_a, label_b, ns_b)
-  ratio = ns_a / ns_b
-  if ratio > 1.0
+def compare(label_a, stats_a, label_b, stats_b, host_variance_pct)
+  ratio = stats_a[:median] / stats_b[:median]
+  if (ratio - 1.0).abs <= host_variance_pct / 100.0
+    printf("%s and %s: no measurable difference (within +/-%.1f%% host variance)\n",
+      label_a, label_b, host_variance_pct)
+  elsif ratio > 1.0
     printf("%s took %.2fx as long as %s (i.e. %s was slower)\n", label_a, ratio, label_b, label_a)
-  elsif ratio < 1.0
-    printf("%s took %.2fx as long as %s (i.e. %s was faster)\n", label_a, ratio, label_b, label_a)
   else
-    printf("%s and %s took the same time\n", label_a, label_b)
+    printf("%s took %.2fx as long as %s (i.e. %s was faster)\n", label_a, ratio, label_b, label_a)
   end
 end
 
-compare("targeted :call (hot target)", target_call_ns, "global :call", global_call_ns)
-compare("targeted :line (hot target)", target_line_ns, "global :line", global_line_ns)
-compare("untargeted :call", untargeted_call_ns, "baseline", baseline_ns)
-compare("untargeted :line", untargeted_line_ns, "baseline", baseline_ns)
+compare("targeted :call (hot target)", target_call_stats, "global :call", global_call_stats, host_variance_pct)
+compare("targeted :line (hot target)", target_line_stats, "global :line", global_line_stats, host_variance_pct)
+compare("untargeted :call", untargeted_call_stats, "baseline", baseline_stats, host_variance_pct)
+compare("untargeted :line", untargeted_line_stats, "baseline", baseline_stats, host_variance_pct)
 
 puts
 puts "== events illegal for target: (recorded, not crashed) =="
