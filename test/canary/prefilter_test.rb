@@ -57,6 +57,16 @@ class PrefilterTest < Minitest::Test
     refute_respond_to report, :reward
   end
 
+  def test_hostile_rubocop_yml_cannot_silence_the_gate
+    fixture = File.join(__dir__, "prefilter_fixtures", "hostile_rubocop_yml", "submission.rb")
+
+    report = Canary::Prefilter.call(fixture)
+
+    cop_names = report.findings.select { |f| f.tier == 1 }.map(&:type)
+    assert_includes cop_names, "Lint/UselessAssignment"
+    assert_includes cop_names, "Lint/UnreachableCode"
+  end
+
   private
 
   def prefilter(source)

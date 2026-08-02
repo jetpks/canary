@@ -1,7 +1,5 @@
 require "prism"
-require "json"
-require "open3"
-require "timeout"
+require "rubocop"
 
 module Canary
   # A static prefilter: inspects a submission WITHOUT executing it and
@@ -9,10 +7,16 @@ module Canary
   # for free, before a rollout is paid for - it never scores or grades.
   #
   # Tier 0 (Prism.parse) is in-process and pays only parse cost. Tier 1
-  # (RuboCop --server --only Lint) only runs once tier 0 succeeds, since
-  # there is no point linting code that doesn't parse.
+  # (RuboCop's Lint department, in-process) only runs once tier 0 succeeds,
+  # since there is no point linting code that doesn't parse.
   class Prefilter
-    RUBOCOP_TIMEOUT = 10 # seconds
+    # The config RuboCop's Lint cops run under is pinned to canary's own
+    # .rubocop.yml (see .config_store) rather than resolved by walking up
+    # from the submission - a submission shipping its own .rubocop.yml would
+    # otherwise silence the very gate judging it, and RuboCop config supports
+    # `require:`, which would run arbitrary Ruby inside this process.
+    CONFIG_PATH = File.expand_path("../../.rubocop.yml", __dir__)
+    RUBOCOP_OPTIONS = { formatters: [], only: ["Lint"] }.freeze
 
     # tier is 0 (Prism) or 1 (RuboCop). severity and type are the
     # underlying tool's own vocabulary, passed through unmodified.
@@ -27,8 +31,34 @@ module Canary
       end
     end
 
+    # Collects offenses from RuboCop::Runner#file_finished instead of
+    # round-tripping through a formatter and its JSON encoding - the same
+    # hook RuboCop's own RuboCop::Lsp::StdinRunner uses.
+    class OffenseCollector < RuboCop::Runner
+      attr_reader :offenses
+
+      def initialize(options, config_store)
+        super
+        @offenses = []
+      end
+
+      private
+
+      def file_finished(_file, offenses)
+        @offenses = offenses
+      end
+    end
+
     def self.call(submission_path)
       new(submission_path).call
+    end
+
+    # Shared across calls: parsing .rubocop.yml on every submission would
+    # undercut the whole point of going in-process. ConfigStore#for_dir
+    # short-circuits to this pinned config for any directory once set, so
+    # sharing it across submissions in different directories is safe.
+    def self.config_store
+      @config_store ||= RuboCop::ConfigStore.new.tap { |store| store.options_config = CONFIG_PATH }
     end
 
     def initialize(submission_path)
@@ -75,38 +105,25 @@ module Canary
     end
 
     def tier1_findings
-      json = run_rubocop
-      return [] if json.nil?
-
-      offenses = JSON.parse(json).dig("files", 0, "offenses") || []
-      offenses.map do |offense|
+      runner = OffenseCollector.new(RUBOCOP_OPTIONS, self.class.config_store)
+      runner.run([@submission_path])
+      runner.offenses.map do |offense|
         Finding.new(
           tier: 1,
-          severity: offense["severity"],
-          type: offense["cop_name"],
-          message: offense["message"],
-          location: offense_location(offense["location"])
+          severity: offense.severity.name,
+          type: offense.cop_name,
+          message: offense.message,
+          location: offense_location(offense)
         )
       end
-    end
-
-    def run_rubocop
-      Timeout.timeout(RUBOCOP_TIMEOUT) do
-        stdout, _stderr, _status = Open3.capture3(
-          "bundle", "exec", "rubocop", "--server", "--only", "Lint", "--format", "json", @submission_path
-        )
-        stdout
-      end
-    rescue Timeout::Error
-      nil
     end
 
     def diagnostic_location(location)
       "#{@submission_path}:#{location.start_line}:#{location.start_column}"
     end
 
-    def offense_location(location)
-      "#{@submission_path}:#{location["start_line"]}:#{location["start_column"]}"
+    def offense_location(offense)
+      "#{@submission_path}:#{offense.line}:#{offense.real_column}"
     end
   end
 end
