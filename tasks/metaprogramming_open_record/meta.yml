@@ -6,3 +6,5 @@ broken:
     misconception: "method_missing works but respond_to_missing? is never overridden, so respond_to?/respond_to_missing? consumers see false for attributes that actually work."
   - id: write_path_no_ops
     misconception: "method_missing's key= branch computes the attribute key but never assigns it into @attrs, so writes silently vanish."
+  - id: mechanism_free
+    misconception: "defines a fixed getter per construction-time attribute via define_singleton_method instead of method_missing/respond_to_missing?, so no attribute set later is ever readable, writable, or respond_to?-true."

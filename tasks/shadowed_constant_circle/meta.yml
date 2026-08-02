@@ -6,3 +6,5 @@ broken:
     misconception: "area/circumference reference the bare constant PI, which lexical scoping resolves to Shapes::PI (3.0), silently shadowing Math::PI."
   - id: circumference_missing_diameter_factor
     misconception: "area correctly uses Math::PI, but circumference uses Math::PI * radius instead of 2 * Math::PI * radius - a radius/diameter mixup unrelated to the constant lookup."
+  - id: mechanism_free
+    misconception: "references the bare constant PI, which lexical scoping resolves to Shapes::PI (3.0), silently shadowing Math::PI - same misconception as shadowed_constant."

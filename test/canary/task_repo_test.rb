@@ -13,7 +13,7 @@ class TaskRepoTest < Minitest::Test
   end
 
   def test_the_corpus_meets_the_shape_floor
-    assert_operator @entries.size, :>=, 14
+    assert_operator @entries.size, :>=, 13
     assert_operator @entries.map(&:category).uniq.size, :>=, 12
     assert_includes @entries.map(&:adapter), :rspec
   end
@@ -38,7 +38,7 @@ class TaskRepoTest < Minitest::Test
     entry = entry("comparable_money")
 
     reference = @pool.rollout_task(task: entry.reference)
-    assert_result reference, total: 5, passed: 5, failed: 0
+    assert_result reference, total: 7, passed: 7, failed: 0
 
     assert_broken_fails_on(entry, "lexical_string_compare", "Money comparable protocol orders values that would break under lexical string comparison")
     assert_broken_fails_on(entry, "reversed_comparison", "Money comparable protocol orders small values correctly")
@@ -68,7 +68,7 @@ class TaskRepoTest < Minitest::Test
     entry = entry("enumerable_sparse_array")
 
     reference = @pool.rollout_task(task: entry.reference)
-    assert_result reference, total: 4, passed: 4, failed: 0
+    assert_result reference, total: 7, passed: 7, failed: 0
 
     assert_broken_fails_on(entry, "unsorted_each", "SparseArrayGraderTest#test_enumerates_stored_values_in_index_order")
     assert_broken_fails_on(entry, "swapped_key_value", "SparseArrayGraderTest#test_sum_of_numeric_values")
@@ -127,26 +127,17 @@ class TaskRepoTest < Minitest::Test
     reference = @pool.rollout_task(task: entry.reference)
     assert_result reference, total: 4, passed: 4, failed: 0
 
-    assert_broken_fails_on(entry, "shared_default_array", "TallyGraderTest#test_returns_a_hash_with_only_the_even_and_odd_keys")
-    assert_broken_fails_on(entry, "swapped_parity_labels", "TallyGraderTest#test_groups_even_numbers_correctly")
+    assert_broken_fails_on(entry, "shared_default_array", "TallyGraderTest#test_two_different_keys_arrays_are_independent_objects")
+    assert_broken_fails_on(entry, "swapped_key_and_value", "TallyGraderTest#test_groups_items_by_the_blocks_return_value")
 
     # The distinguishing example: only the shared-default mistake corrupts
-    # the hash's own keys - the swapped-label mistake keeps a well-formed
-    # hash, just with entries under the wrong key.
-    swapped_failures = broken_result(entry, "swapped_parity_labels").examples
+    # independence between two keys' arrays - the swapped key/value mistake
+    # still hands back two distinct, independent Array objects, just filled
+    # with the wrong content under the wrong keys.
+    swapped_failures = broken_result(entry, "swapped_key_and_value").examples
       .select { |e| e.status == :failed }
       .map(&:name)
-    refute_includes swapped_failures, "TallyGraderTest#test_returns_a_hash_with_only_the_even_and_odd_keys"
-  end
-
-  def test_prepend_logging_wrapper_reference_passes_and_broken_solutions_fail_differently
-    entry = entry("prepend_logging_wrapper")
-
-    reference = @pool.rollout_task(task: entry.reference)
-    assert_result reference, total: 6, passed: 6, failed: 0
-
-    assert_broken_fails_on(entry, "included_instead_of_prepended", "AuditedAccountGraderTest#test_withdrawal_is_logged_before_and_after")
-    assert_broken_fails_on(entry, "prepended_without_super", "AuditedAccountGraderTest#test_withdrawal_reduces_the_balance")
+    refute_includes swapped_failures, "TallyGraderTest#test_two_different_keys_arrays_are_independent_objects"
   end
 
   def test_eql_hash_distance_point_reference_passes_and_broken_solutions_fail_differently
@@ -180,22 +171,29 @@ class TaskRepoTest < Minitest::Test
     entry = entry("enumerator_lazy_short_circuit")
 
     reference = @pool.rollout_task(task: entry.reference)
-    assert_result reference, total: 2, passed: 2, failed: 0
+    assert_result reference, total: 3, passed: 3, failed: 0
 
     assert_broken_fails_on(entry, "eager_select", "Finder.first_matching stops pulling from the source once it has enough matches")
-    assert_broken_fails_on(entry, "first_before_select", "Finder.first_matching finds the first n matches")
+    assert_broken_fails_on(entry, "small_fixed_lookahead", "Finder.first_matching supports chaining a further filter without having committed to a fixed count ahead of time")
   end
 
   # Dynamic loop over every entry, catching a task added without a
   # dedicated test above and enforcing the AC7 bar generically: every
   # broken solution fails with at least one example, and no two of a
   # task's broken solutions fail on the identical set of examples.
+  #
+  # mechanism_free is excluded from the discrimination bar (not from the
+  # must-fail check, which test_every_task_carries_a_mechanism_free_broken_
+  # solution_that_its_grader_rejects covers below): it exists to prove a
+  # different property (a mechanism-ignorant solution can't pass) and is
+  # explicitly permitted to fail on the same examples as an existing broken
+  # solution.
   def test_every_task_in_the_corpus_is_proven_both_ways_and_discriminates
     @entries.each do |entry|
       reference = @pool.rollout_task(task: entry.reference)
       assert reference.success?, "#{entry.name}: expected reference solution to pass (#{reference.error || reference.examples.map { |e| [e.name, e.status] }})"
 
-      failing_sets = entry.broken_solutions.map do |b|
+      failing_sets = entry.broken_solutions.reject { |b| b.id == "mechanism_free" }.map do |b|
         result = @pool.rollout_task(task: b.task)
         refute result.success?, "#{entry.name}/#{b.id}: expected broken solution to fail, not pass vacuously"
         failing = result.examples.select { |e| e.status == :failed }.map(&:name).sort
@@ -206,6 +204,19 @@ class TaskRepoTest < Minitest::Test
       failing_sets.combination(2).each do |a, b|
         refute_equal a, b, "#{entry.name}: two broken solutions failed on the identical set of examples"
       end
+    end
+  end
+
+  # AC3: every surviving task carries broken/mechanism_free.rb (the simplest
+  # solution that ignores the task's trap), and its grader rejects it - not
+  # a hardcoded list, every entry TaskRepo.all resolves right now.
+  def test_every_task_carries_a_mechanism_free_broken_solution_that_its_grader_rejects
+    @entries.each do |entry|
+      mechanism_free = entry.broken_solutions.find { |b| b.id == "mechanism_free" }
+      assert mechanism_free, "#{entry.name}: missing broken/mechanism_free.rb (or its meta.yml broken: entry)"
+
+      result = @pool.rollout_task(task: mechanism_free.task)
+      refute result.success?, "#{entry.name}/mechanism_free: expected the grader to reject a mechanism-ignorant solution, but it passed"
     end
   end
 

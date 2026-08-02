@@ -6,3 +6,5 @@ broken:
     misconception: "<=> compares cents.to_s lexically instead of numerically, so 9 sorts after 10."
   - id: reversed_comparison
     misconception: "<=> compares other.cents <=> cents (operands swapped), inverting the ordering entirely."
+  - id: mechanism_free
+    misconception: "hand-rolls <=>, <, ==, and clamp directly instead of including Comparable, so >, <=, >=, and between? are never defined."

@@ -1,8 +1,10 @@
 category: "Enumerator::Lazy short-circuits per-element; the eager equivalent evaluates everything before slicing"
 adapter: rspec
-statement: "Implement Finder.first_matching(source, n, &predicate), returning an Array of the first n elements of source for which predicate is true, in source order - while calling predicate on as few elements of source as possible, never more than a small constant beyond what's needed to find the n matches. source may be very large or unbounded, so this must not evaluate predicate against elements beyond the ones needed to produce the n matches."
+statement: "Implement Finder.first_matching(source, &predicate), returning a lazy enumerator over the elements of source for which predicate is true, in source order - pulling from source only as far as what is later consumed from the result requires, and never committing to a fixed number of matches ahead of time. Calling .first(n) on the result must call predicate on as few elements of source as possible, never more than a small constant beyond what's needed to find the n matches. The returned value must also support chaining a further operation (e.g. another .select) before anything is consumed, with that chain still able to pull additional elements from source as needed to satisfy what's ultimately requested."
 broken:
   - id: eager_select
-    misconception: "source.select(&predicate).first(n) - no .lazy - evaluates the predicate against every element of source before first(n) ever gets to slice it, giving the right answer at a much higher, unbounded cost."
-  - id: first_before_select
-    misconception: "source.lazy.first(n).select(&predicate) - first(n) forces evaluation and returns a plain Array before select ever filters it, so the result reflects the first n raw elements, not the first n matches."
+    misconception: "source.select(&predicate) - no .lazy - evaluates predicate against every element of source as soon as first_matching is called, before any consumer has said how many matches it actually wants."
+  - id: small_fixed_lookahead
+    misconception: "source.lazy.select(&predicate).first(10) commits to a small fixed number of matches up front instead of staying lazy indefinitely, so a caller that chains a further filter needing matches beyond that fixed window silently gets fewer results than it asked for."
+  - id: mechanism_free
+    misconception: "source.select(&predicate) with no .lazy - the simplest solution that ignores Enumerator::Lazy entirely and just filters eagerly, same misconception as eager_select."

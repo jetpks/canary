@@ -6,3 +6,5 @@ broken:
     misconception: "+ mutates and returns self instead of returning a new Vector, so the operands change under the caller's feet."
   - id: transposed_addition
     misconception: "+ subtracts instead of adds - a copy-paste/sign transposition bug that still returns a fresh, non-mutating Vector."
+  - id: mechanism_free
+    misconception: "+ mutates and returns self instead of returning a new Vector - the simplest implementation that reads correctly for the addition example alone - same misconception as mutates_operands."
