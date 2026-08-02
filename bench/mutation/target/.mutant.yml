@@ -1,0 +1,9 @@
+---
+# Widen mutant's operator surface from its default ("light") to "full" so it
+# is compared against mutineer's broadest surface (all 11 operators, tier 1 +
+# tier 2 - see compare.rb's MUTINEER_ALL_OPERATORS) rather than mutineer's
+# narrower default (tier 1 only). See bench/mutation/compare.rb for the full
+# rationale: mutant has no finer-grained CLI/config selection than light/full.
+usage: opensource
+mutation:
+  operators: full

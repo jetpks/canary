@@ -31,39 +31,77 @@ ROOT       = __dir__
 TARGET_DIR = File.join(ROOT, "target")
 TIMEOUT_S  = SMOKE ? 60 : 300
 
+# Every mutineer operator, tier 1 + tier 2 (see `mutineer --list-operators`).
+# Matched against mutant's "full" operator profile below: mutant has no CLI/
+# config knob that selects mutation categories directly (its config.rb only
+# exposes a light/full toggle on the method-selector-replacement dictionary;
+# the structural mutators - literals, control flow, statement removal - are
+# always on). So true category-for-category parity isn't achievable through
+# either tool's public surface. The defensible normalization is: run each
+# tool at ITS OWN broadest available operator surface, not its default, so
+# neither count is suppressed by an asymmetric default (mutant's default is
+# "light"; mutineer's is "tier 1 only").
+MUTINEER_ALL_OPERATORS = %w[
+  arithmetic comparison boolean_connector boolean_literal statement_removal
+  return_nil literal_mutation condition_negation string_literal regex collection_method
+].join(",")
+
 # --- helpers ---------------------------------------------------------------
 
+# bundler/inline's gemfile(true) leaves BUNDLE_GEMFILE="" and a RUBYOPT
+# -rbundler/setup in ENV. Subprocesses inherit both; with an empty
+# BUNDLE_GEMFILE, the child's bundler/setup walks up from its cwd looking for
+# a Gemfile and finds the repo root's, then refuses to run gems (mutant,
+# mutineer) that aren't in that Gemfile. Bundler.with_unbundled_env restores
+# the pre-Bundler environment for the duration of the block.
 def run_with_timeout(cmd, chdir:, timeout_s:)
   start = Process.clock_gettime(Process::CLOCK_MONOTONIC)
   stdout_str = +""
   stderr_str = +""
   status = nil
 
-  Open3.popen3(*cmd, chdir: chdir) do |stdin, stdout, stderr, wait_thr|
-    stdin.close
-    out_reader = Thread.new { stdout_str << stdout.read }
-    err_reader = Thread.new { stderr_str << stderr.read }
+  Bundler.with_unbundled_env do
+    Open3.popen3(*cmd, chdir: chdir) do |stdin, stdout, stderr, wait_thr|
+      stdin.close
+      out_reader = Thread.new { stdout_str << stdout.read }
+      err_reader = Thread.new { stderr_str << stderr.read }
 
-    begin
-      Timeout.timeout(timeout_s) { wait_thr.join }
-      status = wait_thr.value
-    rescue Timeout::Error
-      Process.kill("KILL", wait_thr.pid) rescue nil
-      wait_thr.join
-      status = :timeout
+      begin
+        Timeout.timeout(timeout_s) { wait_thr.join }
+        status = wait_thr.value
+      rescue Timeout::Error
+        Process.kill("KILL", wait_thr.pid) rescue nil
+        wait_thr.join
+        status = :timeout
+      end
+
+      out_reader.join
+      err_reader.join
     end
-
-    out_reader.join
-    err_reader.join
   end
 
   elapsed = Process.clock_gettime(Process::CLOCK_MONOTONIC) - start
   { stdout: stdout_str, stderr: stderr_str, status: status, elapsed: elapsed }
 end
 
+# String#[] with a negative start returns nil (not a clamp) when the offset
+# is out of range for a short string - e.g. "ab"[-2000..] => nil. That bug
+# previously discarded short error output entirely. This returns the last
+# `n` characters of `str`, or all of `str` if it's shorter than that.
+def tail(str, n)
+  str.to_s.length > n ? str[-n..] : str.to_s
+end
+
 def fail_loudly(tool, reason)
   warn "FAILURE [#{tool}]: #{reason}"
   { tool: tool, ok: false, reason: reason }
+end
+
+def tool_version(cmd)
+  result = run_with_timeout(cmd, chdir: TARGET_DIR, timeout_s: 30)
+  line = result[:stdout].lines.map(&:strip).reject(&:empty?).last ||
+    result[:stderr].lines.map(&:strip).reject(&:empty?).last
+  line || "unknown (no output; stderr tail: #{tail(result[:stderr], 300)})"
 end
 
 # --- mutant ------------------------------------------------------------
@@ -97,20 +135,24 @@ def run_mutant(timeout_s:, smoke:)
     return fail_loudly(
       "mutant",
       "could not parse a nonzero mutation count from output. " \
-      "cmd: #{cmd.join(' ')}\n--- stdout tail ---\n#{out[-2000..]}\n--- stderr tail ---\n#{result[:stderr][-1000..]}"
+      "cmd: #{cmd.join(' ')}\n--- stdout tail ---\n#{tail(out, 2000)}\n--- stderr tail ---\n#{tail(result[:stderr], 1000)}"
     )
   end
+
+  ms_per_mutant = (result[:elapsed] * 1000 / mutations).round(3)
 
   {
     tool:             "mutant",
     ok:               true,
-    version:          "0.16.3",
+    version:          tool_version(%w[mutant --version]),
+    operators:        "full",
     cmd:              cmd.join(" "),
     wall_clock_s:     result[:elapsed].round(3),
     mutants_total:    mutations,
     mutants_killed:   kills,
     reported_coverage_pct: coverage,
     score_pct:        mutations.positive? ? (kills.to_f / mutations * 100).round(2) : 0.0,
+    "ms/mutant":      ms_per_mutant,
     jobs:             Etc.nprocessors,
     exit_status:      result[:status].respond_to?(:exitstatus) ? result[:status].exitstatus : result[:status].to_s
   }
@@ -122,6 +164,7 @@ def run_mutineer(timeout_s:, smoke:)
   cmd = [
     "mutineer", "run", "lib/target.rb",
     "--test", "test/target_test.rb",
+    "--operators", MUTINEER_ALL_OPERATORS,
     "--jobs", Etc.nprocessors.to_s,
     "--format", "json"
   ]
@@ -134,7 +177,7 @@ def run_mutineer(timeout_s:, smoke:)
   if json_text.nil?
     return fail_loudly(
       "mutineer",
-      "no JSON found in stdout. cmd: #{cmd.join(' ')}\n--- stdout tail ---\n#{result[:stdout][-2000..]}\n--- stderr tail ---\n#{result[:stderr][-1000..]}"
+      "no JSON found in stdout. cmd: #{cmd.join(' ')}\n--- stdout tail ---\n#{tail(result[:stdout], 2000)}\n--- stderr tail ---\n#{tail(result[:stderr], 1000)}"
     )
   end
 
@@ -147,15 +190,19 @@ def run_mutineer(timeout_s:, smoke:)
     return fail_loudly("mutineer", "0 mutants attempted. cmd: #{cmd.join(' ')}\n#{json_text}")
   end
 
+  ms_per_mutant = (result[:elapsed] * 1000 / total).round(3)
+
   {
     tool:           "mutineer",
     ok:             true,
-    version:        "0.11.4",
+    version:        tool_version(%w[mutineer --version]),
+    operators:      MUTINEER_ALL_OPERATORS,
     cmd:            cmd.join(" "),
     wall_clock_s:   result[:elapsed].round(3),
     mutants_total:  total,
     mutants_killed: killed,
     score_pct:      summary.fetch("score"),
+    "ms/mutant":    ms_per_mutant,
     jobs:           Etc.nprocessors,
     exit_status:    result[:status].respond_to?(:exitstatus) ? result[:status].exitstatus : result[:status].to_s
   }
