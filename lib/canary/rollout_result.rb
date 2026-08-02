@@ -6,7 +6,9 @@ module Canary
   # completion and reported, however its examples fared), :error (an
   # exception raised inside the adapter, caught and reported by the child),
   # :crash (the child died - signal, exit, exit! - without reporting at
-  # all), or :timeout (the parent gave up waiting and killed the child).
+  # all), :timeout (the parent gave up waiting and killed the child), or
+  # :invalid (the child reported, but the grader files it ran under were
+  # modified during the rollout - not scored, regardless of what it said).
   RolloutResult = Struct.new(
     :adapter, :examples, :passed, :failed, :total, :coverage, :error, :outcome,
     keyword_init: true
@@ -34,6 +36,10 @@ module Canary
 
     def timeout?
       outcome == :timeout
+    end
+
+    def invalid?
+      outcome == :invalid
     end
   end
 
