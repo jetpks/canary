@@ -1,7 +1,11 @@
 # A gem-shaped submission: a small Queue implementation plus a realistic
 # ~20-example test suite, used to measure per-rollout cost against
 # something bigger than a toy.
-class Queue
+#
+# Named BenchQueue rather than Queue: this file models an untrusted
+# submission, and this harness exists to detect submissions that reopen
+# core classes - its own fixture shouldn't do the thing it's built to catch.
+class BenchQueue
   Empty = Class.new(StandardError)
 
   def initialize
@@ -38,7 +42,7 @@ class Queue
   end
 end
 
-RSpec.describe Queue do
+RSpec.describe BenchQueue do
   subject(:queue) { described_class.new }
 
   it "starts empty" do
@@ -80,7 +84,7 @@ RSpec.describe Queue do
   end
 
   it "raises when dequeuing an empty queue" do
-    expect { queue.dequeue }.to raise_error(Queue::Empty, "queue is empty")
+    expect { queue.dequeue }.to raise_error(BenchQueue::Empty, "queue is empty")
   end
 
   it "peeks the first item" do
@@ -95,7 +99,7 @@ RSpec.describe Queue do
   end
 
   it "raises when peeking an empty queue" do
-    expect { queue.peek }.to raise_error(Queue::Empty)
+    expect { queue.peek }.to raise_error(BenchQueue::Empty)
   end
 
   it "returns items as an array" do
