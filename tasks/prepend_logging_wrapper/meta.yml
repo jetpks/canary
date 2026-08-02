@@ -1,0 +1,8 @@
+category: "Module#prepend vs. include, and where super resolves"
+adapter: minitest
+statement: Implement AuditedAccount, using Module#prepend (not include) for a WithdrawalAudit module so its #withdraw can call super into the account's own logic and still wrap it with before/after logging.
+broken:
+  - id: included_instead_of_prepended
+    misconception: "include puts the wrapping module BELOW the class in the ancestor chain, so the class's own #withdraw wins outright and the wrapper's logging method is never invoked."
+  - id: prepended_without_super
+    misconception: "prepends correctly, so the wrapper does run, but its #withdraw never calls super, so the account's own balance-changing logic never executes."

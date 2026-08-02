@@ -1,3 +1,8 @@
 category: refinements and scoped monkey-patching
 adapter: minitest
 statement: Implement HollowCheck (a refinement adding String#hollow?) scoped via `using` to a HollowChecker wrapper class only, not leaked onto String globally.
+broken:
+  - id: global_monkeypatch
+    misconception: "reopens String directly instead of using a refinement, so hollow? leaks onto every String globally."
+  - id: using_forgotten
+    misconception: "defines the refinement correctly but never calls `using HollowCheck` in HollowChecker, so the refinement is never active where it's called."

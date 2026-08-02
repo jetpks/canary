@@ -1,3 +1,8 @@
 category: the Comparable protocol and <=> contracts
 adapter: rspec
 statement: Implement Money, including Comparable, with a <=> that orders by numeric cents (not by string comparison).
+broken:
+  - id: lexical_string_compare
+    misconception: "<=> compares cents.to_s lexically instead of numerically, so 9 sorts after 10."
+  - id: reversed_comparison
+    misconception: "<=> compares other.cents <=> cents (operands swapped), inverting the ordering entirely."

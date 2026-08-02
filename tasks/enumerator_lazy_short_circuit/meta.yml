@@ -1,0 +1,8 @@
+category: "Enumerator::Lazy short-circuits per-element; the eager equivalent evaluates everything before slicing"
+adapter: rspec
+statement: Implement Finder.first_matching(source, n, &predicate) using Enumerator::Lazy so it stops pulling from source once n matches are found, instead of evaluating the predicate over the whole source before taking the first n.
+broken:
+  - id: eager_select
+    misconception: "source.select(&predicate).first(n) - no .lazy - evaluates the predicate against every element of source before first(n) ever gets to slice it, giving the right answer at a much higher, unbounded cost."
+  - id: first_before_select
+    misconception: "source.lazy.first(n).select(&predicate) - first(n) forces evaluation and returns a plain Array before select ever filters it, so the result reflects the first n raw elements, not the first n matches."

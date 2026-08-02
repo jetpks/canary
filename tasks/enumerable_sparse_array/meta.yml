@@ -1,3 +1,8 @@
 category: Enumerable and lazy evaluation
 adapter: minitest
 statement: Implement SparseArray, including Enumerable via an each that yields only stored entries in index order, so map/select/sum/count all derive correctly.
+broken:
+  - id: unsorted_each
+    misconception: "each yields @store's Hash insertion order instead of sorting by index, so ordering is coincidental rather than guaranteed."
+  - id: swapped_key_value
+    misconception: "[]= stores @store[value] = index (arguments swapped), so both the sort key and the yielded content are wrong."

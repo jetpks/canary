@@ -1,3 +1,8 @@
 category: block/proc/lambda semantics
 adapter: rspec
 statement: Implement Memoizer.wrap(&computation), a closure over mutable state that calls computation at most once and caches even a falsy result.
+broken:
+  - id: or_equals_recomputes_falsy
+    misconception: "value ||= computation.call(*args) recomputes every time the cached result is falsy, instead of caching it."
+  - id: drops_call_time_args
+    misconception: "computation.call drops the call-time *args entirely instead of forwarding them through."
