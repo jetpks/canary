@@ -58,7 +58,7 @@ class TaskRepoTest < Minitest::Test
     entry = entry("block_safe_caller")
 
     reference = @pool.rollout_task(task: entry.reference)
-    assert_result reference, total: 4, passed: 4, failed: 0
+    assert_result reference, total: 7, passed: 7, failed: 0
 
     assert_broken_fails_on(entry, "ignores_lambda_vs_proc", "SafeCallerGraderTest#test_calls_a_proc_even_with_too_few_arguments_since_procs_never_raise_on_arity")
     assert_broken_fails_on(entry, "inverted_arity_check", "SafeCallerGraderTest#test_calls_a_lambda_with_a_matching_argument_count")
@@ -153,9 +153,9 @@ class TaskRepoTest < Minitest::Test
     entry = entry("prepend_logging_wrapper")
 
     reference = @pool.rollout_task(task: entry.reference)
-    assert_result reference, total: 4, passed: 4, failed: 0
+    assert_result reference, total: 6, passed: 6, failed: 0
 
-    assert_broken_fails_on(entry, "included_instead_of_prepended", "AuditedAccountGraderTest#test_the_wrapping_module_sits_above_the_class_in_the_ancestor_chain")
+    assert_broken_fails_on(entry, "included_instead_of_prepended", "AuditedAccountGraderTest#test_withdrawal_is_logged_before_and_after")
     assert_broken_fails_on(entry, "prepended_without_super", "AuditedAccountGraderTest#test_withdrawal_reduces_the_balance")
   end
 
@@ -163,7 +163,7 @@ class TaskRepoTest < Minitest::Test
     entry = entry("eql_hash_distance_point")
 
     reference = @pool.rollout_task(task: entry.reference)
-    assert_result reference, total: 4, passed: 4, failed: 0
+    assert_result reference, total: 6, passed: 6, failed: 0
 
     assert_broken_fails_on(entry, "missing_eql_and_hash", "Point comparable + hash contract dedupes equal-valued points with uniq")
     assert_broken_fails_on(entry, "orders_by_x_only", "Point comparable + hash contract sorts a mixed array by distance")

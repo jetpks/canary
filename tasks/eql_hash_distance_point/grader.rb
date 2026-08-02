@@ -21,4 +21,16 @@ RSpec.describe "Point comparable + hash contract" do
     points = [Point.new(1, 1), Point.new(1, 1), Point.new(2, 2)]
     expect(points.uniq.size).to eq(2)
   end
+
+  it "keeps two different-coordinate points as distinct Hash keys even when their distances are equal" do
+    tally = Hash.new(0)
+    tally[Point.new(3, 4)] += 1
+    tally[Point.new(0, 5)] += 1
+    expect(tally.size).to eq(2)
+  end
+
+  it "does not dedupe two different-coordinate points that happen to share a distance" do
+    points = [Point.new(3, 4), Point.new(0, 5)]
+    expect(points.uniq.size).to eq(2)
+  end
 end
