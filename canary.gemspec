@@ -7,7 +7,7 @@ Gem::Specification.new do |spec|
   spec.email         = ["eric@ebj.dev"]
   spec.summary       = "A Ruby coding evaluation and RL environment."
   spec.description   = "A Ruby coding evaluation and RL environment. Ruby as a tail-generalization canary."
-  spec.homepage      = "https://github.com/ebjacobs/canary"
+  spec.homepage      = "https://github.com/jetpks/canary"
   spec.license       = "MIT"
   spec.required_ruby_version = ">= 4.0.0"
 
@@ -18,6 +18,7 @@ Gem::Specification.new do |spec|
   spec.add_dependency "rspec-core", "~> 3.13"
   spec.add_dependency "rspec-expectations", "~> 3.13"
   spec.add_dependency "rspec-mocks", "~> 3.13"
+  spec.add_dependency "rubocop", "~> 1.88"
 
   spec.add_development_dependency "rake", "~> 13.0"
 end
