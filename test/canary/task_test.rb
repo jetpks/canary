@@ -51,7 +51,12 @@ class TaskTest < Minitest::Test
       assert baseline.success?, "expected the intact two-file task to pass"
 
       File.delete(solution_path)
-      result = @pool.rollout_task(task: task)
+      # LoadError (Kernel#load failing on the now-missing file) is a
+      # ScriptError, not a StandardError, so it isn't caught by
+      # run_task_in_child's rescue - it's an expected crash here, but its
+      # backtrace is loud enough to bury a real failure elsewhere in the
+      # suite.
+      result = capturing_child_stderr { @pool.rollout_task(task: task) }
 
       refute result.success?, "expected the task to fail, not pass vacuously, once its solution file is gone"
     end
@@ -90,5 +95,18 @@ class TaskTest < Minitest::Test
   def rspec_task
     dir = File.join(FIXTURES, "rspec_task")
     Canary::Task.new(solution_path: File.join(dir, "solution.rb"), test_path: File.join(dir, "grader.rb"), adapter: :rspec)
+  end
+
+  # Ruby's default uncaught-exception printer writes to the Ruby-level
+  # $stderr global, which a forked child inherits by value at fork time -
+  # reassigning it here before the fork is enough to keep an *expected*
+  # child crash from dumping its backtrace into the real test output.
+  def capturing_child_stderr
+    original_stderr = $stderr
+    $stderr = File.open(File::NULL, "w")
+    yield
+  ensure
+    $stderr.close
+    $stderr = original_stderr
   end
 end
