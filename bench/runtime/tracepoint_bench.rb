@@ -18,16 +18,32 @@
 # repeat its own OS scheduling entity (core, cache state, clock ramp), which is
 # what turned out to matter: repeats taken back-to-back inside one process, or
 # measured early in the script before it warms up, both undercounted the real
-# drift. The untargeted rows' multiplier is checked against that figure before
-# being printed, so a ratio close to 1.0x is reported as "within host
-# variance" instead of a spuriously precise number.
+# drift.
 #
-# For the same reason, the baseline row itself is measured position-matched
-# with that control -- late, after the global/targeted rows -- not first and
-# cold at process start. A cold-first baseline undercounts the same host
-# ramp-up, deflating every multiplier computed against it. Printing of every
-# row is deferred until this baseline exists; the position each row's own
-# work is actually *measured* at is unchanged from before.
+# Position bias: measured live on this host, identical work re-measured late
+# in a process came in at 0.81x/0.77x/0.75x of a cold-first measurement of the
+# same work -- i.e. a process warms up (CPU ramp) by roughly 25% over its
+# first several seconds. A prior version of this script measured the baseline
+# cold-first and the six other rows later, which deflated every multiplier. A
+# later fix moved the baseline to measure late instead -- but that just moved
+# the bias onto the four rows that still measured cold-early against a now
+# warm-late baseline, *inflating* their multipliers instead of deflating them
+# (a row's position relative to the baseline is what matters, not the
+# baseline's position in isolation).
+#
+# The actual fix: all seven arms (baseline + the six measured rows) are run in
+# REPEATS rounds, where each round measures every arm exactly once, in an
+# order rotated by one position per round (`rows.rotate(r)`). Across the run,
+# every arm spends a turn measured first (coldest-relative) and a turn
+# measured last (warmest-relative) -- no arm is systematically colder or
+# warmer than any other, so no arm's multiplier is systematically inflated or
+# deflated by where in the process it happened to run. This also means the
+# per-row warmup (3x Work.run, identical work, no TracePoint) now runs
+# immediately before every individual repeat rather than once before a whole
+# block of REPEATS repeats -- with rows interleaved there is no contiguous
+# block left to warm up once for, and every measurement needs the same warm
+# inline-cache state regardless of what ran between it and this row's last
+# repeat.
 #
 # The `untargeted` variants are the deliverable: a TracePoint targeted at a
 # COLD method (never called by the hot loop) while the hot, UNTARGETED loop
@@ -180,82 +196,67 @@ puts "ns/op below = elapsed / (outer * inner), i.e. cost per Work.step call -- "
      "the traced unit -- so rows with different `inner` remain comparable."
 puts
 
-# --- global :call, targeted :call, global :line, targeted :line ---
-# Measured here (position unchanged from before), but NOT yet printed: the
-# baseline they'll be compared against is measured further down, in the same
-# spot as the host-variance control below, and printing is deferred until
-# that position-matched baseline exists. See the position-matching note above
-# the baseline block for why -- measuring the baseline first, cold, at
-# process start is exactly the bug being fixed here.
-3.times { Work.run(inner_call) }
-global_call_repeats = Array.new(REPEATS) do
+def measure_global(event, inner, outer)
   fired = 0
-  tp = TracePoint.new(:call) { |_tp| fired += 1 }
+  tp = TracePoint.new(event) { |_tp| fired += 1 }
   tp.enable
-  elapsed, = measure_once(inner_call, outer)
+  elapsed, = measure_once(inner, outer)
   tp.disable
   { elapsed: elapsed, fired: fired, ok: fired > 0 }
 end
 
-# --- targeted :call (target: the Work.step method -- every call is a hit) ---
-3.times { Work.run(inner_call) }
-target_call_repeats = Array.new(REPEATS) do
+def measure_targeted(event, target, inner, outer, want_fired:)
   fired = 0
-  tp = TracePoint.new(:call) { |_tp| fired += 1 }
-  tp.enable(target: TARGET_METHOD)
-  elapsed, = measure_once(inner_call, outer)
+  tp = TracePoint.new(event) { |_tp| fired += 1 }
+  tp.enable(target: target)
+  elapsed, = measure_once(inner, outer)
   tp.disable
-  { elapsed: elapsed, fired: fired, ok: fired > 0 }
+  { elapsed: elapsed, fired: fired, ok: want_fired ? fired > 0 : fired.zero? }
 end
 
-# --- global :line ---
-3.times { Work.run(inner_line) }
-global_line_repeats = Array.new(REPEATS) do
-  fired = 0
-  tp = TracePoint.new(:line) { |_tp| fired += 1 }
-  tp.enable
-  elapsed, = measure_once(inner_line, outer)
-  tp.disable
-  { elapsed: elapsed, fired: fired, ok: fired > 0 }
+def measure_baseline(inner, outer, checksum)
+  elapsed, result = measure_once(inner, outer)
+  { elapsed: elapsed, fired: 0, ok: result == checksum }
 end
 
-# --- targeted :line (target: the Work.step method -- every call is a hit) ---
-3.times { Work.run(inner_line) }
-target_line_repeats = Array.new(REPEATS) do
-  fired = 0
-  tp = TracePoint.new(:line) { |_tp| fired += 1 }
-  tp.enable(target: TARGET_METHOD)
-  elapsed, = measure_once(inner_line, outer)
-  tp.disable
-  { elapsed: elapsed, fired: fired, ok: fired > 0 }
-end
-
-# --- baseline: no TracePoint at all ---
-# Measured HERE -- after the four rows above, at the same position in the
-# process as the host-variance control right below it -- rather than first
-# and cold at process start. A cold-first baseline undercounts host/CPU
-# ramp-up (measured live on this host: identical work re-measured late in the
-# same process came in at 0.81x/0.77x/0.75x of a cold-first measurement, i.e.
-# position alone is worth ~25% here), which deflates every multiplier
-# computed against it and is what let the untargeted rows print a physically
-# impossible "faster than baseline" result. Printing for every row above is
-# deferred to below, now that this position-matched baseline_stats exists.
 baseline_checksum = (inner_baseline * (inner_baseline - 1)) / 2
-3.times { Work.run(inner_baseline) } # warmup, identical across all variants above/below
-baseline_repeats = Array.new(REPEATS) do
-  elapsed, result = measure_once(inner_baseline, outer)
-  { elapsed: elapsed, fired: 0, ok: result == baseline_checksum }
+
+# All seven arms below are measured interleaved (see header comment): each of
+# REPEATS rounds measures every arm once, in an order rotated by one position
+# per round, so no arm is systematically colder or warmer than any other.
+rows = [
+  { key: :baseline, inner: inner_baseline, measure: -> { measure_baseline(inner_baseline, outer, baseline_checksum) } },
+  { key: :global_call, inner: inner_call, measure: -> { measure_global(:call, inner_call, outer) } },
+  { key: :target_call, inner: inner_call,
+    measure: -> { measure_targeted(:call, TARGET_METHOD, inner_call, outer, want_fired: true) } },
+  { key: :global_line, inner: inner_line, measure: -> { measure_global(:line, inner_line, outer) } },
+  { key: :target_line, inner: inner_line,
+    measure: -> { measure_targeted(:line, TARGET_METHOD, inner_line, outer, want_fired: true) } },
+  { key: :untargeted_call, inner: inner_untargeted,
+    measure: -> { measure_targeted(:call, COLD_TARGET_METHOD, inner_untargeted, outer, want_fired: false) } },
+  { key: :untargeted_line, inner: inner_untargeted,
+    measure: -> { measure_targeted(:line, COLD_TARGET_METHOD, inner_untargeted, outer, want_fired: false) } },
+].freeze
+
+repeats_data = rows.each_with_object({}) { |row, h| h[row[:key]] = [] }
+
+REPEATS.times do |r|
+  rows.rotate(r).each do |row|
+    3.times { Work.run(row[:inner]) } # warmup, identical work, no TracePoint -- run fresh before every repeat
+    repeats_data[row[:key]] << row[:measure].call
+  end
 end
-baseline_stats = report_row("baseline (no TracePoint, position-matched late)", baseline_repeats, outer * inner_baseline)
+
+baseline_stats = report_row("baseline (no TracePoint, interleaved)", repeats_data[:baseline], outer * inner_baseline)
 puts
 
-global_call_stats = report_row("global :call", global_call_repeats, outer * inner_call,
+global_call_stats = report_row("global :call", repeats_data[:global_call], outer * inner_call,
   baseline_stats: baseline_stats)
-target_call_stats = report_row("targeted :call (hot target)", target_call_repeats, outer * inner_call,
+target_call_stats = report_row("targeted :call (hot target)", repeats_data[:target_call], outer * inner_call,
   baseline_stats: baseline_stats)
-global_line_stats = report_row("global :line", global_line_repeats, outer * inner_line,
+global_line_stats = report_row("global :line", repeats_data[:global_line], outer * inner_line,
   baseline_stats: baseline_stats)
-target_line_stats = report_row("targeted :line (hot target)", target_line_repeats, outer * inner_line,
+target_line_stats = report_row("targeted :line (hot target)", repeats_data[:target_line], outer * inner_line,
   baseline_stats: baseline_stats)
 
 puts
@@ -264,10 +265,10 @@ puts
 # No TracePoint, repeated in CONTROL_REPEATS separate forked processes rather
 # than back-to-back in this one -- each fork is its own OS scheduling entity,
 # which is where the real drift showed up (see header comment). Measured here,
-# right before the untargeted rows it validates, rather than up front: this
-# process has already run several seconds of sustained TracePoint work by this
-# point, and that position turned out to matter -- a control measured before
-# that warm-up understated the noise floor these rows actually see.
+# after all seven interleaved arms above, rather than up front: this process
+# has already run several seconds of sustained TracePoint work by this point,
+# and that position turned out to matter -- a control measured before that
+# warm-up understated the noise floor these rows actually see.
 control_ns = Array.new(CONTROL_REPEATS) { measure_in_child(inner_untargeted, outer) / (outer * inner_untargeted) * 1e9 }
 control_stats = stats(control_ns)
 raw_variance_pct = ((control_stats[:max] - control_stats[:min]) / control_stats[:median]) * 100.0
@@ -286,30 +287,9 @@ puts "== untargeted: targeted TracePoint on a COLD method, hot loop runs untarge
 puts "(this is the measurement the project needs: TracePoint#enable(target:) is"
 puts " supposed to be near-free on code paths that are not the target)"
 
-# --- untargeted :call ---
-3.times { Work.run(inner_untargeted) }
-untargeted_call_repeats = Array.new(REPEATS) do
-  fired = 0
-  tp = TracePoint.new(:call) { |_tp| fired += 1 }
-  tp.enable(target: COLD_TARGET_METHOD)
-  elapsed, = measure_once(inner_untargeted, outer)
-  tp.disable
-  { elapsed: elapsed, fired: fired, ok: fired == 0 }
-end
-untargeted_call_stats = report_row("untargeted :call", untargeted_call_repeats, outer * inner_untargeted,
+untargeted_call_stats = report_row("untargeted :call", repeats_data[:untargeted_call], outer * inner_untargeted,
   baseline_stats: baseline_stats, host_variance_pct: host_variance_pct)
-
-# --- untargeted :line ---
-3.times { Work.run(inner_untargeted) }
-untargeted_line_repeats = Array.new(REPEATS) do
-  fired = 0
-  tp = TracePoint.new(:line) { |_tp| fired += 1 }
-  tp.enable(target: COLD_TARGET_METHOD)
-  elapsed, = measure_once(inner_untargeted, outer)
-  tp.disable
-  { elapsed: elapsed, fired: fired, ok: fired == 0 }
-end
-untargeted_line_stats = report_row("untargeted :line", untargeted_line_repeats, outer * inner_untargeted,
+untargeted_line_stats = report_row("untargeted :line", repeats_data[:untargeted_line], outer * inner_untargeted,
   baseline_stats: baseline_stats, host_variance_pct: host_variance_pct)
 
 puts
