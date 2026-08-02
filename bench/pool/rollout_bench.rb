@@ -56,6 +56,7 @@ puts "cores:     #{Etc.nprocessors}"
 puts "N:         #{n} (#{smoke ? "smoke" : "full"} run)"
 puts "minitest:  #{Gem.loaded_specs["minitest"].version}"
 puts "rspec-core: #{Gem.loaded_specs["rspec-core"].version}"
+puts "async:     #{Gem.loaded_specs["async"].version}"
 puts "one iteration: fork a child, load a #{EXPECTED_PASSED}-example gem-shaped submission, " \
      "run its suite through the adapter, return structured results (+coverage, when enabled)"
 puts
