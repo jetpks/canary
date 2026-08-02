@@ -1,5 +1,6 @@
 require "test_helper"
 require "tmpdir"
+require "tempfile"
 
 # An executable catalogue of grader-tampering attacks against today's
 # Pool#rollout(adapter:, submission_path:). Every fixture under
@@ -67,7 +68,12 @@ class TamperTest < Minitest::Test
   # --- method_missing / const_missing interception ---
 
   def test_const_missing_scoped_to_canary_does_not_reach_pool_or_the_adapter
-    result = rollout(:minitest, "const_missing_forge_result_submission.rb")
+    # The missing-constant crash is the assertion here, not a bug - without
+    # this, the worker's own NameError backtrace (it fires twice: once from
+    # the adapter's RolloutResult.new, once more from the pool's own rescue
+    # handler trying to report the first) is loud enough to bury a real
+    # failure elsewhere in the suite.
+    result = capturing_child_stderr { rollout(:minitest, "const_missing_forge_result_submission.rb") }
 
     assert result.crash?, "expected the missing constant to crash the child, not forge a result"
     refute_equal 999, result.passed
@@ -84,27 +90,30 @@ class TamperTest < Minitest::Test
 
   # --- vacuous suites ---
 
-  def test_an_empty_suite_passes_vacuously
+  def test_an_empty_suite_does_not_pass_vacuously
     result = rollout(:minitest, "empty_suite_submission.rb")
-    skip "empty_suite_submission.rb: a Minitest::Test subclass with zero test_ " \
-         "methods reports total:#{result.total}/failed:#{result.failed}, and " \
-         "RolloutResult#success? is #{result.success?} - violates: a submission " \
-         "that runs nothing must not be indistinguishable from one that passed everything"
+
+    assert_equal 0, result.total
+    refute result.success?
   end
 
-  def test_rspec_an_empty_describe_passes_vacuously
+  def test_rspec_an_empty_describe_does_not_pass_vacuously
     result = rollout(:rspec, "rspec_empty_suite_submission.rb")
-    skip "rspec_empty_suite_submission.rb: a describe block with zero examples " \
-         "reports total:#{result.total}/failed:#{result.failed}, success?:" \
-         "#{result.success?} - violates: the same guarantee, rspec flavor"
+
+    assert_equal 0, result.total
+    refute result.success?
   end
 
-  def test_reopening_minitest_test_directly_hides_tests_from_the_runnables_diff
+  def test_reopening_minitest_test_directly_still_does_not_pass
+    # MinitestAdapter#run's own "newly defined classes" diff never picks up
+    # the reopened test method (Minitest::Test is already a registered
+    # Runnable before any submission loads - see the fixture's own comment),
+    # so this collapses to the exact same total:0 shape as an empty suite,
+    # and the same success? fix closes it too.
     result = rollout(:minitest, "reopen_minitest_test_submission.rb")
-    skip "reopen_minitest_test_submission.rb: adding a failing test_ method by " \
-         "reopening Minitest::Test itself (already a registered Runnable before any " \
-         "submission loads) rather than subclassing it reports total:#{result.total} " \
-         "- violates: a real, failing test must not be silently excluded from the run"
+
+    assert_equal 0, result.total
+    refute result.success?
   end
 
   # --- exiting cleanly before assertions run ---
@@ -151,16 +160,19 @@ class TamperTest < Minitest::Test
 
   # --- and the vectors nobody listed ---
 
-  def test_pipe_hijack_wins_the_race_against_the_real_result
+  def test_pipe_hijack_does_not_reach_the_parent
+    # ObjectSpace.each_object(IO) can still find the relay-owned pipe the
+    # worker holds open for the length of the submission's run (it needs
+    # some way to eventually report a result), so the forged Marshal.dump
+    # still lands on the wire ahead of the real one - but the wire now
+    # carries two objects instead of one, which never happens on the honest
+    # path, and Pool#marshalled_result treats that as untrustworthy rather
+    # than trusting either object on it.
     result = rollout(:minitest, "pipe_hijack_submission.rb")
-    skip "pipe_hijack_submission.rb: ObjectSpace.each_object(IO) finds the parent's " \
-         "open pipe writer inside the forked child and Marshal.dumps a forged " \
-         "payload onto it before MinitestAdapter counts a single example - " \
-         "Marshal.load only consumes the first object in the stream, so this forges " \
-         "passed:#{result.passed}/failed:#{result.failed}/total:#{result.total} " \
-         "without touching RolloutResult, Minitest, or the assertion library at all - " \
-         "violates: the wire between child and parent must carry only what the " \
-         "parent's own trusted code writes to it"
+
+    refute_equal 999, result.passed
+    refute_equal 999, result.total
+    assert result.crash?
   end
 
   def test_record_forge_leaves_a_correct_example_count_but_a_forged_failure_list
@@ -172,15 +184,36 @@ class TamperTest < Minitest::Test
          "more surgical mechanism"
   end
 
-  def test_coverage_result_called_early_destroys_a_genuine_pass
+  def test_coverage_result_called_early_does_not_destroy_a_genuine_pass
     result = rollout(:minitest, "coverage_corruption_submission.rb")
-    skip "coverage_corruption_submission.rb: calling the bare Coverage.result " \
-         "(which stops measurement as a side effect) before run_in_child's own " \
-         "later call raises RuntimeError there, which run_in_child rescues into " \
-         "outcome::#{result.outcome} (error:#{result.error.inspect}) - turning an " \
-         "honestly-passing rollout into a reported failure - violates: the reported " \
-         "outcome must reflect the submission's real pass/fail, not incidental " \
-         "interference with the pool's own instrumentation"
+
+    assert result.success?
+    assert_nil result.coverage
+  end
+
+  # --- deleting the grader outright ---
+
+  def test_deleting_the_grader_is_reported_invalid_not_raised
+    template = File.read(File.join(FIXTURES, "deletes_grader_template.rb"))
+    grader = Tempfile.new(%w[deletes_grader_grader .rb])
+    grader.write(template)
+    grader.close
+    ENV["CANARY_TAMPER_GRADER_PATH"] = grader.path
+
+    task = Canary::Task.new(
+      solution_path: File.join(FIXTURES, "deletes_grader_submission.rb"),
+      test_path: grader.path,
+      adapter: :minitest
+    )
+
+    result = @pool.rollout_task(task: task)
+
+    assert result.invalid?
+    refute result.success?
+    assert_match(/grader/, result.error)
+  ensure
+    ENV.delete("CANARY_TAMPER_GRADER_PATH")
+    grader&.unlink
   end
 
   private
@@ -191,5 +224,18 @@ class TamperTest < Minitest::Test
       submission_path: File.join(FIXTURES, fixture_name),
       timeout: timeout
     )
+  end
+
+  # Ruby's default uncaught-exception printer writes to the Ruby-level
+  # $stderr global, which a forked child inherits by value at fork time -
+  # reassigning it here before the fork is enough to keep an *expected*
+  # child crash from dumping its backtrace into the real test output.
+  def capturing_child_stderr
+    original_stderr = $stderr
+    $stderr = File.open(File::NULL, "w")
+    yield
+  ensure
+    $stderr.close
+    $stderr = original_stderr
   end
 end

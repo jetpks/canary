@@ -1,6 +1,13 @@
 require "coverage"
 require "async"
 require "digest"
+require "stringio"
+
+# The async gem's fiber scheduler routes blocking reads through IO::Buffer,
+# which is still tagged experimental upstream; it has nothing to do with any
+# code in this file. Silencing only this category (not warnings generally)
+# keeps every pool process quiet without hiding an unrelated real warning.
+Warning[:experimental] = false
 
 module Canary
   # A fork-preloaded rollout pool.
@@ -62,25 +69,24 @@ module Canary
 
       result = fork_and_collect(klass, timeout) { run_task_in_child(klass, task, coverage) }
 
-      return result if digest_file(task.test_path) == grader_digest
+      return result if grader_unchanged?(task.test_path, grader_digest)
 
       tampered_result(klass)
     end
 
     private
 
-    def fork_and_collect(klass, timeout)
+    def fork_and_collect(klass, timeout, &block)
       reader, writer = IO.pipe
 
       pid = fork do
         reader.close
         # Lead its own process group so a timeout can kill every descendant
-        # the submission leaves behind, not just this one pid.
+        # the submission leaves behind, not just this one pid. The worker
+        # #relay forks below inherits this group automatically.
         Process.setpgid(0, 0)
         writer.binmode
-        Marshal.dump(yield, writer)
-        writer.close
-        exit!(0)
+        relay(writer, &block)
       end
 
       writer.close
@@ -100,13 +106,73 @@ module Canary
       data.empty? ? crash_result(klass, status) : marshalled_result(data, klass, status)
     end
 
+    # Runs inside the process #fork_and_collect just forked (the "relay").
+    # The relay never runs a line of the submission itself: it forks a
+    # second child (the "worker") to do that, and the worker closes
+    # +writer+ - the parent-facing pipe it would otherwise have inherited -
+    # before the submission gets to run at all. A pipe closed this way has
+    # no path back open from inside the worker: not via ObjectSpace, not via
+    # a guessed file descriptor, not via /dev/fd (verified against this
+    # interpreter on darwin - each raises Errno::EBADF). The relay itself
+    # only ever forwards bytes between two pipes it owns; it never
+    # interprets or trusts them, and it reproduces the worker's own exit
+    # status so the parent's failure taxonomy (crash/signal/timeout) still
+    # reads off a single Process.wait2 the way it always has.
+    def relay(writer, &block)
+      inner_reader, inner_writer = IO.pipe
+      inner_writer.binmode
+
+      worker_pid = fork do
+        inner_reader.close
+        writer.close
+        Marshal.dump(block.call, inner_writer)
+        inner_writer.close
+        exit!(0)
+      end
+
+      inner_writer.close
+      IO.copy_stream(inner_reader, writer)
+      inner_reader.close
+      _worker_pid, worker_status = Process.wait2(worker_pid)
+      writer.close
+
+      Process.kill(worker_status.termsig, Process.pid) if worker_status.signaled?
+      exit!(worker_status.exitstatus || 1)
+    end
+
     def marshalled_result(data, klass, status)
-      Marshal.load(data)
+      io = StringIO.new(data)
+      result = Marshal.load(io)
+
+      # The worker still has to hold *some* open pipe to the relay for the
+      # length of the submission's run (it has to report a result
+      # eventually), so a submission that finds it via ObjectSpace can still
+      # write a forged object onto it - Marshal.load only ever consumes the
+      # first object in a stream, same as the vulnerability this whole
+      # relay exists to close. The honest path calls Marshal.dump exactly
+      # once, ever, so any wire with bytes left after the first object
+      # carries more than the trusted final write and is not trustworthy at
+      # all - not the first object on it, not the last.
+      return wire_tampered_result(klass) unless io.eof?
+
+      result
     rescue ArgumentError
       # A child killed mid-write (e.g. by the timeout path racing a large
       # coverage payload) leaves a non-empty but truncated stream; Marshal
       # rejects it rather than silently returning junk.
       crash_result(klass, status)
+    end
+
+    def wire_tampered_result(klass)
+      RolloutResult.new(
+        adapter: klass::NAME,
+        examples: [],
+        passed: 0,
+        failed: 0,
+        total: 0,
+        outcome: :crash,
+        error: "reporting pipe carried more than one object; discarding an untrustworthy result"
+      )
     end
 
     def timeout_result(klass, pid, reader, timeout)
@@ -151,6 +217,17 @@ module Canary
       Digest::SHA256.file(path).hexdigest
     end
 
+    # Deleting a grader outright - the most direct way to "modify" one - is
+    # a bare Digest::SHA256.file away from crashing the harness instead of
+    # scoring the rollout: the file this checks for no longer exists at all.
+    # Treat that the same as a changed digest rather than let ENOENT escape
+    # into the caller.
+    def grader_unchanged?(path, digest)
+      digest_file(path) == digest
+    rescue Errno::ENOENT
+      false
+    end
+
     def crash_result(klass, status)
       detail = if status.signaled?
                  "terminated by signal #{status.termsig} (#{Signal.signame(status.termsig)})"
@@ -173,7 +250,7 @@ module Canary
       Coverage.start(lines: true, branches: true) if coverage
 
       result = adapter_class.new.run(submission_path)
-      result.coverage = Coverage.result if coverage
+      result.coverage = coverage_result if coverage
       result
     rescue StandardError => e
       RolloutResult.new(
@@ -196,7 +273,7 @@ module Canary
       result = adapter_class.new.run_task(solution_path: task.solution_path, test_path: task.test_path) do
         Coverage.start(lines: true, branches: true) if coverage
       end
-      result.coverage = Coverage.result if coverage
+      result.coverage = coverage_result if coverage
       result
     rescue StandardError => e
       RolloutResult.new(
@@ -208,6 +285,18 @@ module Canary
         outcome: :error,
         error: "#{e.class}: #{e.message}"
       )
+    end
+
+    # A submission that calls the bare Coverage.result itself stops
+    # measurement as a side effect (that's the whole method's contract, not
+    # a bug); our own later call above would otherwise raise and, caught by
+    # the generic rescue on either caller, turn an honest pass into
+    # outcome::error. Losing coverage data to that is a fair price - losing
+    # the actual pass/fail verdict to it is not.
+    def coverage_result
+      Coverage.result
+    rescue RuntimeError
+      nil
     end
 
     def adapter_class(name)

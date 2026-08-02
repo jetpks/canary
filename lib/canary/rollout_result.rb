@@ -18,8 +18,11 @@ module Canary
       self.outcome ||= :ok
     end
 
+    # total.positive? matters as much as failed.zero?: a suite that ran zero
+    # examples (an empty class, or real tests a framework never selected to
+    # run) must not be indistinguishable from one that passed every example.
     def success?
-      outcome == :ok && error.nil? && failed.zero?
+      outcome == :ok && error.nil? && failed.zero? && total.positive?
     end
 
     def ok?
