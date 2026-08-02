@@ -100,4 +100,37 @@ class CoverageOrderingTest < Minitest::Test
 
     assert_equal [path], result.coverage.keys
   end
+
+  # §4.4's invariant re-opens for a two-file task, because there are now TWO
+  # files to order against Coverage.start (BRIEF §3): the grader is loaded
+  # first (registering examples but not running them), then Coverage.start,
+  # then the solution - so coverage attributed to the task contains the
+  # solution's path and nothing else: not the grader, not the framework.
+  def test_minitest_task_rollout_coverage_contains_only_the_solution
+    pool = Canary::Pool.new(adapters: [:minitest])
+    dir = File.expand_path("task_fixtures/minitest_task", __dir__)
+    task = Canary::Task.new(
+      solution_path: File.join(dir, "solution.rb"),
+      test_path: File.join(dir, "grader.rb"),
+      adapter: :minitest
+    )
+
+    result = pool.rollout_task(task: task)
+
+    assert_equal [task.solution_path], result.coverage.keys
+  end
+
+  def test_rspec_task_rollout_coverage_contains_only_the_solution
+    pool = Canary::Pool.new(adapters: [:rspec])
+    dir = File.expand_path("task_fixtures/rspec_task", __dir__)
+    task = Canary::Task.new(
+      solution_path: File.join(dir, "solution.rb"),
+      test_path: File.join(dir, "grader.rb"),
+      adapter: :rspec
+    )
+
+    result = pool.rollout_task(task: task)
+
+    assert_equal [task.solution_path], result.coverage.keys
+  end
 end

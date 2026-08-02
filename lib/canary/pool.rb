@@ -1,5 +1,6 @@
 require "coverage"
 require "async"
+require "digest"
 
 module Canary
   # A fork-preloaded rollout pool.
@@ -45,6 +46,30 @@ module Canary
     # than propagated as an exception.
     def rollout(adapter:, submission_path:, coverage: true, timeout: DEFAULT_TIMEOUT)
       klass = adapter_class(adapter)
+      fork_and_collect(klass, timeout) { run_in_child(klass, submission_path, coverage) }
+    end
+
+    # Forks a child to run +task+ (a solution file graded by a separate test
+    # file, per Canary::Task) through the task's adapter. Same failure
+    # taxonomy and Coverage semantics as #rollout, plus one more terminal
+    # outcome: the parent digests the grader file before forking and again
+    # after the child exits, and reports :invalid rather than the child's
+    # own result if it changed - a rollout that tampered with its own grader
+    # is not scored, whatever it claims to have done.
+    def rollout_task(task:, coverage: true, timeout: DEFAULT_TIMEOUT)
+      klass = adapter_class(task.adapter)
+      grader_digest = digest_file(task.test_path)
+
+      result = fork_and_collect(klass, timeout) { run_task_in_child(klass, task, coverage) }
+
+      return result if digest_file(task.test_path) == grader_digest
+
+      tampered_result(klass)
+    end
+
+    private
+
+    def fork_and_collect(klass, timeout)
       reader, writer = IO.pipe
 
       pid = fork do
@@ -53,7 +78,7 @@ module Canary
         # the submission leaves behind, not just this one pid.
         Process.setpgid(0, 0)
         writer.binmode
-        Marshal.dump(run_in_child(klass, submission_path, coverage), writer)
+        Marshal.dump(yield, writer)
         writer.close
         exit!(0)
       end
@@ -74,8 +99,6 @@ module Canary
 
       data.empty? ? crash_result(klass, status) : marshalled_result(data, klass, status)
     end
-
-    private
 
     def marshalled_result(data, klass, status)
       Marshal.load(data)
@@ -112,6 +135,22 @@ module Canary
       )
     end
 
+    def tampered_result(klass)
+      RolloutResult.new(
+        adapter: klass::NAME,
+        examples: [],
+        passed: 0,
+        failed: 0,
+        total: 0,
+        outcome: :invalid,
+        error: "grader file changed during the rollout; not scored"
+      )
+    end
+
+    def digest_file(path)
+      Digest::SHA256.file(path).hexdigest
+    end
+
     def crash_result(klass, status)
       detail = if status.signaled?
                  "terminated by signal #{status.termsig} (#{Signal.signame(status.termsig)})"
@@ -134,6 +173,29 @@ module Canary
       Coverage.start(lines: true, branches: true) if coverage
 
       result = adapter_class.new.run(submission_path)
+      result.coverage = Coverage.result if coverage
+      result
+    rescue StandardError => e
+      RolloutResult.new(
+        adapter: adapter_class::NAME,
+        examples: [],
+        passed: 0,
+        failed: 0,
+        total: 0,
+        outcome: :error,
+        error: "#{e.class}: #{e.message}"
+      )
+    end
+
+    # The task-aware sibling of #run_in_child. The adapter is handed the
+    # coverage-start hook as a block instead of this method calling
+    # Coverage.start itself, because for a task the correct moment to start
+    # it sits *between* the adapter's two loads (test file, then solution
+    # file) - see each adapter's #run_task for why that ordering matters.
+    def run_task_in_child(adapter_class, task, coverage)
+      result = adapter_class.new.run_task(solution_path: task.solution_path, test_path: task.test_path) do
+        Coverage.start(lines: true, branches: true) if coverage
+      end
       result.coverage = Coverage.result if coverage
       result
     rescue StandardError => e

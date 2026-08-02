@@ -27,8 +27,30 @@ module Canary
       def run(submission_path)
         before = Minitest::Runnable.runnables.dup
         load submission_path
+        run_suite(Minitest::Runnable.runnables - before)
+      end
+
+      # Runs a task: +test_path+ (the grader) is loaded first, then the
+      # caller's block, then +solution_path+. This must happen in that
+      # order because the caller starts Coverage from the block - loading
+      # the grader (which only registers a Minitest::Test subclass; none of
+      # its test methods run yet) before Coverage exists keeps the grader
+      # and this framework out of the solution's coverage, while loading
+      # the solution after keeps it in.
+      def run_task(solution_path:, test_path:)
+        before = Minitest::Runnable.runnables.dup
+        load test_path
         klasses = Minitest::Runnable.runnables - before
 
+        yield if block_given?
+
+        load solution_path
+        run_suite(klasses)
+      end
+
+      private
+
+      def run_suite(klasses)
         Minitest.seed = 42
         reporter = CollectingReporter.new
 
@@ -74,8 +96,14 @@ module Canary
           @results = []
         end
 
+        # +result+ arrives already a Minitest::Result - Runnable.run hands
+        # reporters `klass.new(method_name).run`, and Test#run's own return
+        # value is `Result.from self` (minitest.rb's own contract comment).
+        # Wrapping it again here used to call Result.from on a Result,
+        # which stamps `klass` from the wrapper's own class name
+        # ("Minitest::Result") instead of the original test class.
         def record(result)
-          @results << Minitest::Result.from(result)
+          @results << result
         end
       end
     end

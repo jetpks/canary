@@ -35,6 +35,8 @@ module Canary
       # state the warmup leaves behind, so none of it leaks into a real
       # rollout's example count.
       def self.warm_up
+        out = err = nil
+
         Tempfile.create(["canary_rspec_warmup", ".rb"]) do |file|
           file.write(<<~RUBY)
             RSpec.describe "canary rspec warmup" do
@@ -48,12 +50,12 @@ module Canary
           out = File.open(null, "w")
           err = File.open(null, "w")
           RSpec::Core::Runner.run([file.path], err, out)
-          out.close
-          err.close
         end
 
         RSpec::Matchers::BuiltIn.constants.each { |c| RSpec::Matchers::BuiltIn.const_get(c) }
       ensure
+        out&.close
+        err&.close
         RSpec.reset
       end
       private_class_method :warm_up
@@ -69,6 +71,45 @@ module Canary
 
         RSpec::Core::Runner.run([submission_path], err, out)
 
+        build_result
+      ensure
+        out&.close
+        err&.close
+      end
+
+      # Runs a task: +test_path+ (the grader) is loaded first via the
+      # runner's own #setup, which registers its example groups but does not
+      # yet run them; then the caller's block; then +solution_path+; then
+      # the already-registered groups are run. This must happen in that
+      # order because the caller starts Coverage from the block - loading
+      # the grader before Coverage exists keeps it (and this framework) out
+      # of the solution's coverage, while loading the solution after keeps
+      # it in. #setup only registers example groups - the `it` blocks that
+      # reference the solution don't run until #run_specs below, by which
+      # point the solution is loaded.
+      def run_task(solution_path:, test_path:)
+        null = File::NULL
+        out = File.open(null, "w")
+        err = File.open(null, "w")
+
+        options = RSpec::Core::ConfigurationOptions.new([test_path])
+        runner = RSpec::Core::Runner.new(options)
+        runner.setup(err, out)
+
+        yield if block_given?
+
+        load solution_path
+        runner.run_specs(runner.world.ordered_example_groups)
+
+        build_result
+      ensure
+        out&.close
+        err&.close
+      end
+
+      private
+
+      def build_result
         examples = RSpec.world.all_examples.map do |example|
           result = example.execution_result
 
@@ -89,9 +130,6 @@ module Canary
           failed: failed,
           total: examples.size
         )
-      ensure
-        out&.close
-        err&.close
       end
     end
   end
