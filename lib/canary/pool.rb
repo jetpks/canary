@@ -21,6 +21,12 @@ module Canary
       rspec: Adapters::RSpecAdapter,
     }.freeze
 
+    # Measured rollouts run 2.4ms-29ms; untrusted submissions are ordinary
+    # inputs, not attacks, so a submission that merely runs a slow-but-legit
+    # suite should never be mistaken for a hang. Generous on purpose - a
+    # timeout that fires early is a worse bug than one that waits too long.
+    DEFAULT_TIMEOUT = 5 # seconds
+
     # Preloads every requested adapter's framework in the parent process.
     def initialize(adapters: ADAPTERS.keys)
       adapters.each do |name|
@@ -31,7 +37,12 @@ module Canary
     # Forks a child to run +submission_path+ through +adapter+, returning a
     # Canary::RolloutResult. When +coverage+ is true (the default) the child
     # also reports Coverage.result for every file it parsed.
-    def rollout(adapter:, submission_path:, coverage: true)
+    #
+    # This always returns a RolloutResult and never raises into the caller:
+    # a child that exits, exit!s, is killed by a signal, or never finishes
+    # within +timeout+ seconds is reported via RolloutResult#outcome rather
+    # than propagated as an exception.
+    def rollout(adapter:, submission_path:, coverage: true, timeout: DEFAULT_TIMEOUT)
       klass = adapter_class(adapter)
       reader, writer = IO.pipe
 
@@ -44,14 +55,58 @@ module Canary
       end
 
       writer.close
+
+      unless IO.select([reader], nil, nil, timeout)
+        return timeout_result(klass, pid, reader, timeout)
+      end
+
       data = reader.read
       reader.close
-      Process.wait(pid)
+      _pid, status = Process.wait2(pid)
 
-      Marshal.load(data)
+      data.empty? ? crash_result(klass, status) : Marshal.load(data)
     end
 
     private
+
+    def timeout_result(klass, pid, reader, timeout)
+      begin
+        Process.kill("KILL", pid)
+      rescue Errno::ESRCH
+        # the child exited between the select timeout and the kill; still
+        # reap it below so it doesn't linger as a zombie.
+      end
+      Process.wait2(pid)
+      reader.close
+
+      RolloutResult.new(
+        adapter: klass::NAME,
+        examples: [],
+        passed: 0,
+        failed: 0,
+        total: 0,
+        outcome: :timeout,
+        error: "rollout exceeded #{timeout}s timeout"
+      )
+    end
+
+    def crash_result(klass, status)
+      detail = if status.signaled?
+                 "terminated by signal #{status.termsig} (#{Signal.signame(status.termsig)})"
+               else
+                 "exited with status #{status.exitstatus} without reporting a result"
+               end
+
+      RolloutResult.new(
+        adapter: klass::NAME,
+        examples: [],
+        passed: 0,
+        failed: 0,
+        total: 0,
+        outcome: :crash,
+        error: detail
+      )
+    end
 
     def run_in_child(adapter_class, submission_path, coverage)
       Coverage.start(lines: true, branches: true) if coverage
@@ -66,6 +121,7 @@ module Canary
         passed: 0,
         failed: 0,
         total: 0,
+        outcome: :error,
         error: "#{e.class}: #{e.message}"
       )
     end
