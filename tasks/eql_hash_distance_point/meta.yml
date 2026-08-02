@@ -1,0 +1,8 @@
+category: "Comparable gives == via <=>, but Hash keys, uniq, and Array#- need eql?/hash too"
+adapter: rspec
+statement: Implement Point (x, y), including Comparable to order by distance from the origin, and also defining #eql?/#hash consistent with #== so equal-valued points work correctly as Hash keys and under Array#uniq - Comparable's <=> alone only gives you ==, not eql?/hash.
+broken:
+  - id: missing_eql_and_hash
+    misconception: "Comparable gives == via <=>, but eql?/hash are never overridden, so they fall back to identity - equal-valued points collide neither as Hash keys nor under uniq."
+  - id: orders_by_x_only
+    misconception: "eql?/hash are implemented correctly, but <=> compares x alone instead of distance, so ordering is wrong while the Hash/uniq behavior is fine."

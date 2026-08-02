@@ -1,3 +1,8 @@
 category: string and regex handling
 adapter: minitest
 statement: Implement AttrParser.parse(line), extracting key="value" pairs via a named-capture regex with a lazy (not greedy) value match.
+broken:
+  - id: greedy_value_match
+    misconception: "value uses .* (greedy) instead of .*? (lazy), so it crosses quote boundaries between multiple pairs on the same line."
+  - id: excludes_spaces_from_value
+    misconception: "value is narrowed to [^ \"]*? to \"fix\" greediness, which instead makes any value containing a space fail to match at all."

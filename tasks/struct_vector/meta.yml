@@ -1,3 +1,8 @@
 category: Struct / Data value semantics and equality
 adapter: minitest
 statement: Implement Vector, a keyword_init Struct with a non-mutating #+ that returns a new Vector instead of mutating either operand.
+broken:
+  - id: mutates_operands
+    misconception: "+ mutates and returns self instead of returning a new Vector, so the operands change under the caller's feet."
+  - id: transposed_addition
+    misconception: "+ subtracts instead of adds - a copy-paste/sign transposition bug that still returns a fresh, non-mutating Vector."

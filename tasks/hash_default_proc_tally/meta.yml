@@ -1,0 +1,8 @@
+category: "Hash default values: a shared mutable object vs. a per-key default_proc"
+adapter: minitest
+statement: Implement Tally.group_by_parity(numbers), returning a Hash of arrays keyed by :even/:odd, built with a per-key default_proc (not a single default object shared across every unset key).
+broken:
+  - id: shared_default_array
+    misconception: "Hash.new([]) hands every unset key the SAME default array; << mutates that shared object instead of auto-vivifying a fresh one per key, so the hash never gains real entries."
+  - id: swapped_parity_labels
+    misconception: "uses the correct per-key default_proc pattern but tests n.odd? where it means n.even?, so entries land under the opposite key from what its label promises."

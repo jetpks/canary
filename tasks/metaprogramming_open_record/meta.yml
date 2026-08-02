@@ -1,3 +1,8 @@
 category: metaprogramming
 adapter: minitest
 statement: Implement OpenRecord, a dynamic attribute store backed by method_missing with a matching respond_to_missing?.
+broken:
+  - id: missing_respond_to_missing
+    misconception: "method_missing works but respond_to_missing? is never overridden, so respond_to?/respond_to_missing? consumers see false for attributes that actually work."
+  - id: write_path_no_ops
+    misconception: "method_missing's key= branch computes the attribute key but never assigns it into @attrs, so writes silently vanish."

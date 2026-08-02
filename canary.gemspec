@@ -14,7 +14,12 @@ Gem::Specification.new do |spec|
   # .rubocop.yml is packaged alongside lib/ (not just under lib/**/*.rb)
   # because Canary::Prefilter::CONFIG_PATH resolves it relative to the
   # installed gem root - without this it dangles in an installed gem.
-  spec.files         = Dir["lib/**/*.rb"] + [".rubocop.yml"]
+  #
+  # tasks/** is packaged for the same reason: Canary::TaskRepo::ROOT is also
+  # gem-relative (../../tasks from lib/canary/task_repo.rb), so the corpus
+  # must ship for TaskRepo.all's default root to resolve in an installed gem
+  # instead of dangling the way .rubocop.yml once did (I07 D2).
+  spec.files         = Dir["lib/**/*.rb"] + [".rubocop.yml"] + Dir["tasks/**/*"].select { |f| File.file?(f) }
   spec.require_paths = ["lib"]
 
   spec.add_dependency "async", "~> 2.43"

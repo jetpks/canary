@@ -1,3 +1,8 @@
 category: exception hierarchies, ensure ordering, retry, custom error classes
 adapter: minitest
 statement: Implement Retrier.call(max_attempts:), which retries only TransientError (not PermanentError) up to max_attempts before re-raising.
+broken:
+  - id: rescues_standard_error
+    misconception: "rescues StandardError instead of TransientError, so PermanentError gets retried too instead of raising immediately."
+  - id: swallows_after_exhaustion
+    misconception: "retries TransientError correctly but never re-raises once max_attempts is exhausted, so the caller silently gets nil instead of the error."
