@@ -1,0 +1,4 @@
+Lint/UselessAssignment:
+  Enabled: false
+Lint/UnreachableCode:
+  Enabled: false
