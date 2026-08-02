@@ -11,9 +11,27 @@
 
 require_relative "../../lib/canary"
 require "etc"
+require "rbconfig"
+
+SELF_PATH = File.expand_path(__FILE__)
+
+# Times a single, fresh `Canary::Pool.new` in its own process and prints the
+# elapsed ms to stdout. Run as a subprocess (see measure_preload_ms below):
+# Pool.new's real one-time cost only happens once per process (`require` is
+# memoized), so measuring it N times in-process would understate every
+# sample after the first.
+if ARGV.include?("--preload-worker")
+  start = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+  pool = Canary::Pool.new(adapters: %i[minitest rspec])
+  elapsed_ms = (Process.clock_gettime(Process::CLOCK_MONOTONIC) - start) * 1000.0
+  raise "preload worker: Pool.new did not return a Canary::Pool (got #{pool.class})" unless pool.is_a?(Canary::Pool)
+  puts elapsed_ms
+  exit 0
+end
 
 smoke = ARGV.include?("--smoke")
 n = smoke ? 5 : 400
+PRELOAD_REPEATS = smoke ? 3 : 5
 
 FIXTURES = {
   minitest: File.expand_path("fixtures/minitest_submission.rb", __dir__),
@@ -21,6 +39,25 @@ FIXTURES = {
 }.freeze
 
 EXPECTED_PASSED = 21
+
+def measure_preload_ms
+  out = IO.popen([RbConfig.ruby, SELF_PATH, "--preload-worker"], &:read)
+  raise "preload worker failed (exit #{$?.exitstatus}): #{out.inspect}" unless $?.success? && !out.strip.empty?
+
+  Float(out)
+end
+
+# One-time cost of constructing the pool (both adapters preloaded, the
+# default this bench itself uses below) - real, paid once per process, and
+# otherwise recorded nowhere. Each sample is a fresh subprocess so every
+# sample pays the real first-time cost, not an amortized repeat.
+preload_ms_samples = Array.new(PRELOAD_REPEATS) { measure_preload_ms }
+sorted_preload_ms = preload_ms_samples.sort
+preload_stats = {
+  min: sorted_preload_ms.first,
+  median: sorted_preload_ms[sorted_preload_ms.length / 2],
+  max: sorted_preload_ms.last,
+}
 
 # Warm both adapters identically, in the parent, before any measured loop -
 # an asymmetric warmup (warming one framework but not the other) rigs the
@@ -59,6 +96,11 @@ puts "rspec-core: #{Gem.loaded_specs["rspec-core"].version}"
 puts "async:     #{Gem.loaded_specs["async"].version}"
 puts "one iteration: fork a child, load a #{EXPECTED_PASSED}-example gem-shaped submission, " \
      "run its suite through the adapter, return structured results (+coverage, when enabled)"
+puts format(
+  "one-time cost: Pool.new(adapters: %%i[minitest rspec]) construction, N=%d fresh processes: " \
+  "min=%.3f median=%.3f max=%.3f ms",
+  PRELOAD_REPEATS, preload_stats[:min], preload_stats[:median], preload_stats[:max]
+)
 puts
 
 rows = []

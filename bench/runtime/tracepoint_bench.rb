@@ -22,6 +22,13 @@
 # being printed, so a ratio close to 1.0x is reported as "within host
 # variance" instead of a spuriously precise number.
 #
+# For the same reason, the baseline row itself is measured position-matched
+# with that control -- late, after the global/targeted rows -- not first and
+# cold at process start. A cold-first baseline undercounts the same host
+# ramp-up, deflating every multiplier computed against it. Printing of every
+# row is deferred until this baseline exists; the position each row's own
+# work is actually *measured* at is unchanged from before.
+#
 # The `untargeted` variants are the deliverable: a TracePoint targeted at a
 # COLD method (never called by the hot loop) while the hot, UNTARGETED loop
 # runs at full size. This measures dispatch cost on non-target code paths,
@@ -31,7 +38,6 @@
 # invocation cost, not dispatch cost. Both numbers are kept because they
 # answer different questions.
 
-require "benchmark"
 require "etc"
 
 SMOKE = ARGV.include?("--smoke")
@@ -174,17 +180,13 @@ puts "ns/op below = elapsed / (outer * inner), i.e. cost per Work.step call -- "
      "the traced unit -- so rows with different `inner` remain comparable."
 puts
 
-# --- baseline: no TracePoint at all ---
-baseline_checksum = (inner_baseline * (inner_baseline - 1)) / 2
-3.times { Work.run(inner_baseline) } # warmup, identical across all variants below
-baseline_repeats = Array.new(REPEATS) do
-  elapsed, result = measure_once(inner_baseline, outer)
-  { elapsed: elapsed, fired: 0, ok: result == baseline_checksum }
-end
-baseline_stats = report_row("baseline (no TracePoint)", baseline_repeats, outer * inner_baseline)
-puts
-
-# --- global :call ---
+# --- global :call, targeted :call, global :line, targeted :line ---
+# Measured here (position unchanged from before), but NOT yet printed: the
+# baseline they'll be compared against is measured further down, in the same
+# spot as the host-variance control below, and printing is deferred until
+# that position-matched baseline exists. See the position-matching note above
+# the baseline block for why -- measuring the baseline first, cold, at
+# process start is exactly the bug being fixed here.
 3.times { Work.run(inner_call) }
 global_call_repeats = Array.new(REPEATS) do
   fired = 0
@@ -194,8 +196,6 @@ global_call_repeats = Array.new(REPEATS) do
   tp.disable
   { elapsed: elapsed, fired: fired, ok: fired > 0 }
 end
-global_call_stats = report_row("global :call", global_call_repeats, outer * inner_call,
-  baseline_stats: baseline_stats)
 
 # --- targeted :call (target: the Work.step method -- every call is a hit) ---
 3.times { Work.run(inner_call) }
@@ -207,8 +207,6 @@ target_call_repeats = Array.new(REPEATS) do
   tp.disable
   { elapsed: elapsed, fired: fired, ok: fired > 0 }
 end
-target_call_stats = report_row("targeted :call (hot target)", target_call_repeats, outer * inner_call,
-  baseline_stats: baseline_stats)
 
 # --- global :line ---
 3.times { Work.run(inner_line) }
@@ -220,8 +218,6 @@ global_line_repeats = Array.new(REPEATS) do
   tp.disable
   { elapsed: elapsed, fired: fired, ok: fired > 0 }
 end
-global_line_stats = report_row("global :line", global_line_repeats, outer * inner_line,
-  baseline_stats: baseline_stats)
 
 # --- targeted :line (target: the Work.step method -- every call is a hit) ---
 3.times { Work.run(inner_line) }
@@ -233,6 +229,32 @@ target_line_repeats = Array.new(REPEATS) do
   tp.disable
   { elapsed: elapsed, fired: fired, ok: fired > 0 }
 end
+
+# --- baseline: no TracePoint at all ---
+# Measured HERE -- after the four rows above, at the same position in the
+# process as the host-variance control right below it -- rather than first
+# and cold at process start. A cold-first baseline undercounts host/CPU
+# ramp-up (measured live on this host: identical work re-measured late in the
+# same process came in at 0.81x/0.77x/0.75x of a cold-first measurement, i.e.
+# position alone is worth ~25% here), which deflates every multiplier
+# computed against it and is what let the untargeted rows print a physically
+# impossible "faster than baseline" result. Printing for every row above is
+# deferred to below, now that this position-matched baseline_stats exists.
+baseline_checksum = (inner_baseline * (inner_baseline - 1)) / 2
+3.times { Work.run(inner_baseline) } # warmup, identical across all variants above/below
+baseline_repeats = Array.new(REPEATS) do
+  elapsed, result = measure_once(inner_baseline, outer)
+  { elapsed: elapsed, fired: 0, ok: result == baseline_checksum }
+end
+baseline_stats = report_row("baseline (no TracePoint, position-matched late)", baseline_repeats, outer * inner_baseline)
+puts
+
+global_call_stats = report_row("global :call", global_call_repeats, outer * inner_call,
+  baseline_stats: baseline_stats)
+target_call_stats = report_row("targeted :call (hot target)", target_call_repeats, outer * inner_call,
+  baseline_stats: baseline_stats)
+global_line_stats = report_row("global :line", global_line_repeats, outer * inner_line,
+  baseline_stats: baseline_stats)
 target_line_stats = report_row("targeted :line (hot target)", target_line_repeats, outer * inner_line,
   baseline_stats: baseline_stats)
 

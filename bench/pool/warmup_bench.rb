@@ -192,8 +192,12 @@ def print_deltas(steady_medians)
     end
     next if deltas.empty?
 
-    signs = deltas.map { |d| d[:delta_ms] <=> 0 }.uniq
-    verdict = signs.size > 1 ? "SIGN FLIPS ACROSS ROUNDS - noise" : "sign consistent"
+    verdict = if deltas.size < 2
+      "not computable (needs >=2 rounds, got #{deltas.size})"
+    else
+      signs = deltas.map { |d| d[:delta_ms] <=> 0 }.uniq
+      signs.size > 1 ? "SIGN FLIPS ACROSS ROUNDS - noise" : "sign consistent"
+    end
     puts "  delta none-#{arm} (positive = #{arm} faster) per round: #{verdict}"
     deltas.each { |d| puts format("    round=%d pos=%d -> %+.3f ms", d[:round], d[:position], d[:delta_ms]) }
   end
