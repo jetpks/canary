@@ -6,3 +6,5 @@ broken:
     misconception: "value uses .* (greedy) instead of .*? (lazy), so it crosses quote boundaries between multiple pairs on the same line."
   - id: excludes_spaces_from_value
     misconception: "value is narrowed to [^ \"]*? to \"fix\" greediness, which instead makes any value containing a space fail to match at all."
+  - id: mechanism_free
+    misconception: "value uses .* (greedy) instead of .*? (lazy) - the simplest regex that reads correctly for a single pair - so it crosses quote boundaries between multiple pairs on the same line, same misconception as greedy_value_match."

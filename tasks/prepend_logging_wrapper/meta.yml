@@ -1,8 +1,0 @@
-category: "Module#prepend vs. include, and where super resolves"
-adapter: minitest
-statement: "Implement AuditedAccount.new(balance) and AuditedAccount#withdraw(amount). A successful withdrawal reduces balance by amount and returns the new balance. Each call to #withdraw that does not raise appends exactly two lines to an accessible #log: one recorded before the balance is touched (naming the attempted amount) and one recorded after it succeeds (naming the amount and the resulting balance). withdraw(amount) still raises ArgumentError, and appends only the first of those two log lines, when amount exceeds the current balance."
-broken:
-  - id: included_instead_of_prepended
-    misconception: "include puts the wrapping module BELOW the class in the ancestor chain, so the class's own #withdraw wins outright and the wrapper's logging method is never invoked."
-  - id: prepended_without_super
-    misconception: "prepends correctly, so the wrapper does run, but its #withdraw never calls super, so the account's own balance-changing logic never executes."

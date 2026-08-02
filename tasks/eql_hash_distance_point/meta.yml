@@ -6,3 +6,5 @@ broken:
     misconception: "Comparable gives == via <=>, but eql?/hash are never overridden, so they fall back to identity - equal-valued points collide neither as Hash keys nor under uniq."
   - id: orders_by_x_only
     misconception: "eql?/hash are implemented correctly, but <=> compares x alone instead of distance, so ordering is wrong while the Hash/uniq behavior is fine."
+  - id: mechanism_free
+    misconception: "includes Comparable for ordering but never overrides eql?/hash, so equal-valued points fall back to identity for Hash keys and uniq - same misconception as missing_eql_and_hash."

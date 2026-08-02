@@ -19,4 +19,15 @@ RSpec.describe "Money comparable protocol" do
   it "clamps a value into a range" do
     expect(Money.new(500).clamp(Money.new(0), Money.new(100)).cents).to eq(100)
   end
+
+  it "supports the full Comparable operator set derived from <=>" do
+    expect(Money.new(10)).to be > Money.new(9)
+    expect(Money.new(9)).to be <= Money.new(9)
+    expect(Money.new(10)).to be >= Money.new(9)
+  end
+
+  it "reports whether a value falls between two others" do
+    expect(Money.new(50).between?(Money.new(0), Money.new(100))).to eq(true)
+    expect(Money.new(150).between?(Money.new(0), Money.new(100))).to eq(false)
+  end
 end

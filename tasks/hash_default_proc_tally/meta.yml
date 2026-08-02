@@ -1,8 +1,10 @@
 category: "Hash default values: a shared mutable object vs. a per-key default_proc"
 adapter: minitest
-statement: "Implement Tally.group_by_parity(numbers), returning a Hash keyed by :even and :odd, each mapped to an Array of the numbers of that parity in the order they appeared. The :even and :odd arrays must be two independent Array objects - appending to one must never affect the other."
+statement: "Implement Tally.group_by(items) { |item| ... }, returning a Hash where each key the block returns for an item maps to an Array of the items that produced that key, in encounter order. The block's possible return values are not known in advance and are not enumerable ahead of time. Every key's array must be its own independent Array object - appending to one key's array must never affect any other key's array, including one for a key that doesn't first appear until later in the iteration. The returned Hash contains only the keys that actually occurred."
 broken:
   - id: shared_default_array
     misconception: "Hash.new([]) hands every unset key the SAME default array; << mutates that shared object instead of auto-vivifying a fresh one per key, so the hash never gains real entries."
-  - id: swapped_parity_labels
-    misconception: "uses the correct per-key default_proc pattern but tests n.odd? where it means n.even?, so entries land under the opposite key from what its label promises."
+  - id: swapped_key_and_value
+    misconception: "uses the correct per-key default_proc pattern but writes result[item] << yield(item) (key and value swapped), so entries land under the item itself instead of its classified key."
+  - id: mechanism_free
+    misconception: "Hash.new([]) - the simplest solution that ignores per-key defaulting entirely and reaches for a single shared default array, same misconception as shared_default_array."

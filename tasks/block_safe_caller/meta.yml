@@ -6,3 +6,5 @@ broken:
     misconception: "drops the callable.lambda? guard, so a Proc with a matching arity check gets the default fallback treatment reserved for lambdas."
   - id: inverted_arity_check
     misconception: "arity == args.size (inverted from !=): defaults on a matching call and attempts (and crashes) the real call on a mismatch."
+  - id: mechanism_free
+    misconception: "always calls callable directly with args - the simplest solution that never engages the default: fallback at all."

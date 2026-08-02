@@ -6,3 +6,5 @@ broken:
     misconception: "each yields @store's Hash insertion order instead of sorting by index, so ordering is coincidental rather than guaranteed."
   - id: swapped_key_value
     misconception: "[]= stores @store[value] = index (arguments swapped), so both the sort key and the yielded content are wrong."
+  - id: mechanism_free
+    misconception: "hand-implements to_a/sum/select/count directly against @store instead of including Enumerable and defining each, so derived methods like first/min_by/reduce are never gained for free."
