@@ -11,7 +11,10 @@ Gem::Specification.new do |spec|
   spec.license       = "MIT"
   spec.required_ruby_version = ">= 4.0.0"
 
-  spec.files         = Dir["lib/**/*.rb"]
+  # .rubocop.yml is packaged alongside lib/ (not just under lib/**/*.rb)
+  # because Canary::Prefilter::CONFIG_PATH resolves it relative to the
+  # installed gem root - without this it dangles in an installed gem.
+  spec.files         = Dir["lib/**/*.rb"] + [".rubocop.yml"]
   spec.require_paths = ["lib"]
 
   spec.add_dependency "async", "~> 2.43"
