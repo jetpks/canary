@@ -14,6 +14,7 @@ Gem::Specification.new do |spec|
   spec.files         = Dir["lib/**/*.rb"]
   spec.require_paths = ["lib"]
 
+  spec.add_dependency "async", "~> 2.43"
   spec.add_dependency "minitest", "~> 6.0"
   spec.add_dependency "rspec-core", "~> 3.13"
   spec.add_dependency "rspec-expectations", "~> 3.13"

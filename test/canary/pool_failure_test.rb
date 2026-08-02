@@ -1,4 +1,5 @@
 require "test_helper"
+require "tempfile"
 
 # Proves, with real submissions in real forked children rather than
 # assertion-free narration, that Pool#rollout survives every terminal
@@ -55,6 +56,38 @@ class PoolFailureTest < Minitest::Test
     assert_operator elapsed, :<, 5, "expected the pool's own timeout to bound the rollout"
   end
 
+  def test_a_descendant_left_running_by_the_submission_times_out_and_is_killed_with_the_group
+    pid_file = Tempfile.new("canary-descendant-pid")
+    ENV["CANARY_DESCENDANT_PID_PATH"] = pid_file.path
+    started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+
+    result = @pool.rollout(
+      adapter: :minitest,
+      submission_path: fixture("leaves_descendant_submission.rb"),
+      timeout: 1
+    )
+
+    elapsed = Process.clock_gettime(Process::CLOCK_MONOTONIC) - started_at
+    descendant_pid = Integer(File.read(pid_file.path))
+
+    assert result.timeout?
+    assert_operator elapsed, :<, 5, "expected the pool's own timeout to bound the rollout"
+    assert_eventually_dead(descendant_pid)
+  ensure
+    ENV.delete("CANARY_DESCENDANT_PID_PATH")
+    pid_file&.close!
+  end
+
+  def test_a_truncated_marshal_payload_is_reported_as_a_crash_not_raised
+    result = @pool.rollout(
+      adapter: :minitest,
+      submission_path: fixture("killed_mid_write_submission.rb")
+    )
+
+    assert result.crash?
+    assert_match(/signal/, result.error)
+  end
+
   def test_a_normal_rollout_is_still_a_success
     result = @pool.rollout(
       adapter: :minitest,
@@ -81,5 +114,26 @@ class PoolFailureTest < Minitest::Test
 
   def fixture(name)
     File.join(FIXTURES, name)
+  end
+
+  # A killed process stays visible to Process.kill(0, ...) as a zombie until
+  # whichever process it got reparented to (it's no longer our own direct
+  # child once its original parent exits) calls wait on it - a real but
+  # small OS-level bookkeeping delay, not a live process we're giving the
+  # benefit of the doubt. Polls instead of asserting instantaneously so that
+  # delay doesn't read as a failure to kill it.
+  def assert_eventually_dead(pid, within: 3)
+    deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + within
+    loop do
+      begin
+        Process.kill(0, pid)
+      rescue Errno::ESRCH
+        return
+      end
+      raise Minitest::Assertion, "expected descendant #{pid} to be dead within #{within}s, but it is still alive" \
+        if Process.clock_gettime(Process::CLOCK_MONOTONIC) > deadline
+
+      sleep 0.05
+    end
   end
 end

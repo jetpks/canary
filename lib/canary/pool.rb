@@ -1,4 +1,5 @@
 require "coverage"
+require "async"
 
 module Canary
   # A fork-preloaded rollout pool.
@@ -48,6 +49,9 @@ module Canary
 
       pid = fork do
         reader.close
+        # Lead its own process group so a timeout can kill every descendant
+        # the submission leaves behind, not just this one pid.
+        Process.setpgid(0, 0)
         writer.binmode
         Marshal.dump(run_in_child(klass, submission_path, coverage), writer)
         writer.close
@@ -56,25 +60,43 @@ module Canary
 
       writer.close
 
-      unless IO.select([reader], nil, nil, timeout)
+      begin
+        # Bounds the whole read, not just the wait for its first byte - a
+        # descendant the submission leaves running holds the pipe's write
+        # end open and would otherwise block `reader.read` past EOF forever.
+        data = Sync { |task| task.with_timeout(timeout) { reader.read } }
+      rescue Async::TimeoutError
         return timeout_result(klass, pid, reader, timeout)
       end
 
-      data = reader.read
       reader.close
       _pid, status = Process.wait2(pid)
 
-      data.empty? ? crash_result(klass, status) : Marshal.load(data)
+      data.empty? ? crash_result(klass, status) : marshalled_result(data, klass, status)
     end
 
     private
 
+    def marshalled_result(data, klass, status)
+      Marshal.load(data)
+    rescue ArgumentError
+      # A child killed mid-write (e.g. by the timeout path racing a large
+      # coverage payload) leaves a non-empty but truncated stream; Marshal
+      # rejects it rather than silently returning junk.
+      crash_result(klass, status)
+    end
+
     def timeout_result(klass, pid, reader, timeout)
       begin
-        Process.kill("KILL", pid)
+        # A leading "-" targets the whole process group (by construction,
+        # this pid's own group), not just its leader. Never look the group
+        # up via Process.getpgid: it raises Errno::ESRCH for an
+        # exited-but-unreaped child - exactly this child's state - and
+        # rescuing that would silently stop reaping its descendants.
+        Process.kill("KILL", -pid)
       rescue Errno::ESRCH
-        # the child exited between the select timeout and the kill; still
-        # reap it below so it doesn't linger as a zombie.
+        # the whole group already exited between the timeout firing and the
+        # kill; still reap it below so it doesn't linger as a zombie.
       end
       Process.wait2(pid)
       reader.close
