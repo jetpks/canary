@@ -1,0 +1,3 @@
+category: string and regex handling
+adapter: minitest
+statement: Implement AttrParser.parse(line), extracting key="value" pairs via a named-capture regex with a lazy (not greedy) value match.

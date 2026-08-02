@@ -1,0 +1,3 @@
+category: metaprogramming
+adapter: minitest
+statement: Implement OpenRecord, a dynamic attribute store backed by method_missing with a matching respond_to_missing?.

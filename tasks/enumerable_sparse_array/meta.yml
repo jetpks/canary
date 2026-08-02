@@ -1,0 +1,3 @@
+category: Enumerable and lazy evaluation
+adapter: minitest
+statement: Implement SparseArray, including Enumerable via an each that yields only stored entries in index order, so map/select/sum/count all derive correctly.

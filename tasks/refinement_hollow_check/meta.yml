@@ -1,0 +1,3 @@
+category: refinements and scoped monkey-patching
+adapter: minitest
+statement: Implement HollowCheck (a refinement adding String#hollow?) scoped via `using` to a HollowChecker wrapper class only, not leaked onto String globally.

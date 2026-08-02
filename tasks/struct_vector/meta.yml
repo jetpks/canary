@@ -1,0 +1,3 @@
+category: Struct / Data value semantics and equality
+adapter: minitest
+statement: Implement Vector, a keyword_init Struct with a non-mutating #+ that returns a new Vector instead of mutating either operand.
