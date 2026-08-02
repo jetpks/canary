@@ -175,6 +175,28 @@ class TamperTest < Minitest::Test
     assert result.crash?
   end
 
+  def test_writing_non_marshal_bytes_onto_the_wire_is_reported_not_raised
+    # The assertion here is as much that this method returns at all - before
+    # the fix, this raised TypeError straight out of Pool#rollout instead of
+    # returning anything to assert on.
+    result = rollout(:minitest, "non_marshal_wire_submission.rb")
+
+    assert result.crash?
+    refute result.success?
+    assert_match(/Marshal/, result.error)
+  end
+
+  def test_forging_one_object_then_exiting_before_the_honest_write_still_forges_a_pass
+    result = rollout(:minitest, "forge_and_exit_submission.rb")
+    skip "forge_and_exit_submission.rb: forging exactly one RolloutResult then calling " \
+         "exit! before the honest write ever runs produces a wire byte-for-byte identical " \
+         "to a real one - passed:#{result.passed}/failed:#{result.failed}/total:" \
+         "#{result.total} - violates: the parent must trust only values it computed " \
+         "itself; closing this needs to know how an object got onto the wire, not just " \
+         "what's on it, which is containment beyond fork (rank 6), not something " \
+         "Pool#marshalled_result can do alone"
+  end
+
   def test_record_forge_leaves_a_correct_example_count_but_a_forged_failure_list
     result = rollout(:minitest, "record_forge_submission.rb")
     skip "record_forge_submission.rb: reopening Minitest::Result.from to clear " \
