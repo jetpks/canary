@@ -1,6 +1,6 @@
 category: refinements and scoped monkey-patching
 adapter: minitest
-statement: Implement HollowCheck (a refinement adding String#hollow?) scoped via `using` to a HollowChecker wrapper class only, not leaked onto String globally.
+statement: "Implement HollowChecker.hollow?(str), returning true when str is empty or contains only whitespace, false otherwise. This capability must be reachable only through HollowChecker.hollow? - plain String instances outside HollowChecker must not gain a new hollow? method as a side effect of loading this file: \"\".respond_to?(:hollow?) must remain false everywhere else in the process."
 broken:
   - id: global_monkeypatch
     misconception: "reopens String directly instead of using a refinement, so hollow? leaks onto every String globally."

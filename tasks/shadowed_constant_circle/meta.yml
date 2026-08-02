@@ -1,6 +1,6 @@
 category: "constant lookup: lexical scope vs. a shadowing sibling constant"
 adapter: minitest
-statement: Implement Shapes::Circle#area and #circumference using Math::PI explicitly. Shapes defines its own naive PI for an unrelated display purpose, and a bare, unqualified PI inside Circle would resolve lexically to that sibling constant instead of Math::PI.
+statement: "Implement Shapes::Circle#area and #circumference: area(radius) equals pi times radius squared, and circumference(radius) equals pi times the circle's full diameter (2 times radius), where pi is the actual mathematical constant (irrational, approximately 3.14159265), accurate to within a small numeric tolerance."
 broken:
   - id: shadowed_constant
     misconception: "area/circumference reference the bare constant PI, which lexical scoping resolves to Shapes::PI (3.0), silently shadowing Math::PI."
