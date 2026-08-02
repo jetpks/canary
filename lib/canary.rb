@@ -7,6 +7,9 @@ require_relative "canary/prompt"
 require_relative "canary/task"
 require_relative "canary/task_repo"
 require_relative "canary/verifier"
+require_relative "canary/providers/anthropic"
+require_relative "canary/providers/fake"
+require_relative "canary/sampler"
 
 module Canary
 end

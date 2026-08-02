@@ -22,12 +22,20 @@ Gem::Specification.new do |spec|
   spec.files         = Dir["lib/**/*.rb"] + [".rubocop.yml"] + Dir["tasks/**/*"].select { |f| File.file?(f) }
   spec.require_paths = ["lib"]
 
+  spec.add_dependency "anthropic", "~> 1.59"
   spec.add_dependency "async", "~> 2.43"
+  spec.add_dependency "dry-monads", "~> 1.10"
   spec.add_dependency "minitest", "~> 6.0"
   spec.add_dependency "rspec-core", "~> 3.13"
   spec.add_dependency "rspec-expectations", "~> 3.13"
   spec.add_dependency "rspec-mocks", "~> 3.13"
   spec.add_dependency "rubocop", "~> 1.88"
 
+  # base64 stopped shipping as a Ruby default gem as of 3.4 (we're on 4.0);
+  # the installed anthropic-1.59.0 gem's lib/anthropic.rb still `require
+  # "base64"`s unconditionally without declaring it as a dependency of its
+  # own gemspec, so it has to be supplied here or `require "canary"` raises
+  # LoadError the moment providers/anthropic.rb loads the gem.
+  spec.add_development_dependency "base64"
   spec.add_development_dependency "rake", "~> 13.0"
 end
