@@ -1,5 +1,6 @@
 category: block/proc/lambda semantics
 adapter: rspec
+provenance: authored
 statement: Implement Memoizer.wrap(&computation), returning a callable that invokes computation at most once no matter how many times the callable itself is called - including when computation returns a falsy value like nil or false - and forwards whatever arguments each call is given through to computation on the one invocation that actually runs it.
 broken:
   - id: or_equals_recomputes_falsy

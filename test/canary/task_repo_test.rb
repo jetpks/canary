@@ -1,4 +1,6 @@
 require "test_helper"
+require "tmpdir"
+require "fileutils"
 
 # Proves the corpus under tasks/** both ways through the real
 # Canary::Pool#rollout_task: every reference solution passes its grader,
@@ -220,6 +222,40 @@ class TaskRepoTest < Minitest::Test
     end
   end
 
+  # AC9: every task carries provenance, and any future sourced task without
+  # a source_attestation fails loudly - not a hardcoded list, every entry
+  # TaskRepo.all resolves right now, same shape as the mechanism_free test
+  # above.
+  def test_every_task_carries_valid_provenance
+    @entries.each do |entry|
+      assert_includes %w[authored sourced], entry.provenance, "#{entry.name}: provenance must be \"authored\" or \"sourced\", got #{entry.provenance.inspect}"
+      next unless entry.provenance == "sourced"
+
+      assert_match(/\S/, entry.source_attestation.to_s, "#{entry.name}: sourced task carries no source_attestation")
+    end
+  end
+
+  def test_todays_corpus_is_entirely_authored_with_no_attestation
+    assert @entries.all? { |e| e.provenance == "authored" }
+    assert @entries.all? { |e| e.source_attestation.nil? }
+  end
+
+  def test_a_sourced_task_with_no_attestation_fails_loudly_at_load_time
+    with_task_dir(provenance: "sourced") do |root|
+      error = assert_raises(ArgumentError) { Canary::TaskRepo.new(root).all }
+      assert_match(/source_attestation/, error.message)
+    end
+  end
+
+  def test_a_sourced_task_with_an_attestation_loads_cleanly
+    with_task_dir(provenance: "sourced", source_attestation: "training data cutoff: 2025-01") do |root|
+      entry = Canary::TaskRepo.new(root).all.first
+
+      assert_equal "sourced", entry.provenance
+      assert_equal "training data cutoff: 2025-01", entry.source_attestation
+    end
+  end
+
   # BRIEF §6/AC7: prove, against the real pool, that coverage attributed to
   # a task's solution contains only the solution - not the grader, not any
   # broken sibling, not the framework. Picked struct_vector arbitrarily; any
@@ -260,5 +296,24 @@ class TaskRepoTest < Minitest::Test
   def assert_failed(result, example_name)
     failing = result.examples.select { |e| e.status == :failed }.map(&:name)
     assert_includes failing, example_name
+  end
+
+  # A single-task corpus in a scratch dir, isolated from tasks/**, for
+  # exercising TaskRepo's load-time provenance validation directly rather
+  # than through the real corpus (which carries no sourced task today).
+  def with_task_dir(provenance:, source_attestation: nil)
+    Dir.mktmpdir do |root|
+      dir = File.join(root, "probe_task")
+      FileUtils.mkdir_p(File.join(dir, "broken"))
+
+      meta = {"category" => "probe", "adapter" => "minitest", "statement" => "probe", "provenance" => provenance, "broken" => [{"id" => "mechanism_free", "misconception" => "probe"}]}
+      meta["source_attestation"] = source_attestation if source_attestation
+      File.write(File.join(dir, "meta.yml"), meta.to_yaml)
+      File.write(File.join(dir, "solution.rb"), "")
+      File.write(File.join(dir, "grader.rb"), "")
+      File.write(File.join(dir, "broken", "mechanism_free.rb"), "")
+
+      yield root
+    end
   end
 end

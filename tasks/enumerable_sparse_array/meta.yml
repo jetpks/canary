@@ -1,5 +1,6 @@
 category: Enumerable and lazy evaluation
 adapter: minitest
+provenance: authored
 statement: "Implement SparseArray, a sparse Enumerable collection: []=(index, value) stores value at index, and iterating the collection (each, map, select, sum, count, etc.) yields the stored values in ascending index order - regardless of the order the values were assigned - with no entries for indexes that were never set."
 broken:
   - id: unsorted_each

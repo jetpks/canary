@@ -1,5 +1,6 @@
 category: "constant lookup: lexical scope vs. a shadowing sibling constant"
 adapter: minitest
+provenance: authored
 statement: "Implement Shapes::Circle#area and #circumference: area(radius) equals pi times radius squared, and circumference(radius) equals pi times the circle's full diameter (2 times radius), where pi is the actual mathematical constant (irrational, approximately 3.14159265), accurate to within a small numeric tolerance."
 broken:
   - id: shadowed_constant
