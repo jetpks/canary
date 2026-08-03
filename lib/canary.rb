@@ -11,6 +11,9 @@ require_relative "canary/verifier"
 require_relative "canary/providers/anthropic"
 require_relative "canary/providers/fake"
 require_relative "canary/sampler"
+require_relative "canary/eval/record"
+require_relative "canary/eval/report"
+require_relative "canary/eval/runner"
 
 module Canary
 end
