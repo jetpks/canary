@@ -1,0 +1,5 @@
+category: "arithmetic"
+adapter: minitest
+provenance: authored
+statement: "Define CanaryServerFixture::Adder.call(a, b), returning a + b."
+broken: []
