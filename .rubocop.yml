@@ -1,3 +1,11 @@
 AllCops:
   NewCops: enable
   TargetRubyVersion: 4.0
+
+# This codebase uses double quotes throughout. The cop was reporting the
+# house convention rather than a deviation from it, which is noise in the
+# one place a linter has to stay signal: Prefilter runs RuboCop over
+# untrusted model output, so anything routinely ignored here is training to
+# ignore it there too.
+Style/StringLiterals:
+  Enabled: false

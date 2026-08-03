@@ -37,8 +37,8 @@ module Canary
           messages: [{role: "user", content: prompt}]
         )
 
-        return Failure(Error.new(reason: :refusal, message: "provider refused: stop_reason=refusal")) if response.stop_reason == :refusal
-        return Failure(Error.new(reason: :truncated, message: "response truncated: stop_reason=max_tokens, max_tokens=#{max_tokens}")) if response.stop_reason == :max_tokens
+        return content_failure(:refusal, "provider refused: stop_reason=refusal", response) if response.stop_reason == :refusal
+        return content_failure(:truncated, "response truncated: stop_reason=max_tokens, max_tokens=#{max_tokens}", response) if response.stop_reason == :max_tokens
 
         Success(Sample.new(text: extract_text(response), raw: response.deep_to_h))
       rescue ::Anthropic::Errors::APIError => e
@@ -46,6 +46,14 @@ module Canary
       end
 
       private
+
+      # A content outcome came back well-formed, so the response travels on
+      # the Failure exactly as it would on a Success. Dropping it here is
+      # what once made a truncated answer unrecoverable from the record
+      # even though its fenced code block was complete (I14 F1).
+      def content_failure(reason, message, response)
+        Failure(Error.new(reason: reason, message: message, raw: response.deep_to_h))
+      end
 
       def extract_text(response)
         response.content.select { |block| block.type == :text }.map(&:text).join

@@ -47,9 +47,20 @@ finding it has established.
   grading test file and is meant for diagnostic use, not normal sampling.
 - **The sampler** (`Canary::Sampler`, `lib/canary/sampler.rb`) — drives a
   provider (currently `Canary::Providers::Anthropic`, wrapping the
-  `anthropic` gem's client) for `n` completions per task under a fixed
-  request-count budget, recording every dispatched request/response as a
-  JSON line before returning.
+  `anthropic` gem's client) for `n` completions per task, recording every
+  dispatched request/response as a JSON line before returning. Two
+  independent guards bound a run: a request-count budget checked before
+  dispatch, and an optional dollar cap accumulated from each response's
+  reported usage against a caller-supplied price table. A response the
+  provider cut short at its token limit is a failure rather than a
+  short answer, so a truncated completion is never scored as if the model
+  had finished — the response is still recorded, since its text is the only
+  copy there is.
+- **The extractor** (`Canary::Extractor`, `lib/canary/extractor.rb`) —
+  models answer in fenced markdown, not in source files. This pulls the
+  Ruby out of that answer, and reports a distinct outcome when there is
+  nothing it can honestly extract, so "the model declined" stays
+  distinguishable from "the model wrote broken code."
 - **`Canary::Verifier`** (`lib/canary/verifier.rb`) composes the prefilter
   and the pool into one call per task: a submission that the prefilter
   rejects never reaches a rollout.

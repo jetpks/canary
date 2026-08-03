@@ -118,6 +118,36 @@ class SamplerTest < Minitest::Test
     assert_includes result.failure.message, "max_tokens"
   end
 
+  # A truncated response is a Failure, but its text is still the only copy
+  # of what the model actually wrote - and it is often recoverable, since
+  # the cut usually lands in trailing prose after a complete fenced block
+  # (the recorded claude-opus-5 sample is exactly that shape). Recording
+  # only the reason code would make the sample unrecoverable after the
+  # fact, so the response travels on the Failure and into the record.
+  def test_a_truncated_sample_records_the_response_not_just_the_reason
+    provider = Canary::Providers::Anthropic.new(client: client_returning(load_response("truncated")))
+    sampler = build_sampler(provider: provider, max_samples: 5)
+
+    result = sampler.call(@entry, model: "claude-opus-5", n: 1).first
+
+    assert_equal :truncated, result.failure.reason
+
+    recorded = read_records.first["response"]
+    assert_equal "truncated", recorded["reason"]
+    refute_nil recorded["raw"], "a truncated response's text is the only copy there is"
+    assert_includes Canary::Extractor.call(recorded["raw"]["content"].select { |b| b["type"] == "text" }.map { |b| b["text"] }.join).code, "Memoizer"
+  end
+
+  def test_a_failure_with_no_response_records_a_nil_raw
+    fake = Canary::Providers::Fake.new
+    sampler = build_sampler(provider: fake, max_samples: 0)
+
+    result = sampler.call(@entry, model: "claude-fixture-model", n: 1).first
+
+    assert_equal :budget_exhausted, result.failure.reason
+    assert_nil result.failure.raw
+  end
+
   # Real recorded shapes (see test/canary/sampler_fixtures/responses): a
   # single text block (haiku) and thinking-then-text (sonnet/opus/fable).
   # extract_text has to select the text block by +type+ rather than assume

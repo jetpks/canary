@@ -132,8 +132,15 @@ module Canary
       @spend_guard.record!(model: model, usage: result.success.raw[:usage])
     end
 
+    # A failed sample records its reason AND whatever came back with it:
+    # the content outcomes (:refusal, :truncated) carry a full response,
+    # and a record that kept only the reason code would throw away the one
+    # copy of a truncated answer's text (I14 F1). +raw+ is nil for the
+    # failures that genuinely have no response.
     def payload_for(result)
-      result.success? ? result.success.raw : {reason: result.failure.reason, message: result.failure.message}
+      return result.success.raw if result.success?
+
+      {reason: result.failure.reason, message: result.failure.message, raw: result.failure.raw}
     end
   end
 end
