@@ -108,9 +108,36 @@ solution with the shared grader as `Canary::Task` values that
   catalogue of grader-tampering attacks against the current pool: as of this
   writing, 10 of its 19 named vectors still succeed against the harness
   (each recorded as a `skip` naming the vector and what it forges), and 9
-  are defended by a real assertion. This work is open and ongoing — nothing
-  in this repo should be read as a claim that submissions are safely
-  contained.
+  are defended by a real assertion. Those 10 fall into four accepted,
+  documented classes of the same underlying limit. canary's rollout relay
+  (`Pool#fork_and_collect`/`#relay`, `lib/canary/pool.rb`) defends the
+  reported verdict against a submission that corrupts the wire's *shape*
+  (extra objects, malformed bytes) but does not and cannot fully defend
+  against a submission that corrupts the wire's *timing* — a submission
+  that constructs one legitimately-shaped, falsely-valued result and exits
+  before the harness's own honest write ever runs is indistinguishable,
+  byte-for-byte, from a real result
+  (`test/canary/tamper_fixtures/forge_and_exit_submission.rb`) — nor
+  against a submission that intercepts its own assertion dispatch through
+  `method_missing` on a class it legitimately owns
+  (`test/canary/tamper_fixtures/method_missing_assert_submission.rb`), nor
+  against filesystem side effects invisible to the reported result entirely
+  (`test/canary/tamper_fixtures/writes_file_submission.rb`,
+  `rspec_writes_file_submission.rb`) — fork isolates memory, not disk. Nor,
+  finally, against direct reopening of the trusted assertion/verdict
+  classes themselves: a `Module#freeze` counter on those classes was tried
+  and rejected — a bypass probe showed subclass-override,
+  `Minitest::Test.prepend`, and include-into-subclass all defeat it, so it
+  closes the fixtures' exact syntax, not the capability. All four vector
+  classes — wire-timing forge-and-exit, self-owned `method_missing`
+  interception, filesystem side effects, and trusted-class reopen — are
+  accepted, documented limits of process-fork isolation on a single
+  machine, not gaps the relay's wire protocol can close by itself; no
+  counter to any of them is claimed anywhere in this repo. Closing them for
+  real requires OS-level sandboxing or off-process verdict verification,
+  both explicitly out of this component's scope. This work is open and
+  ongoing — nothing in this repo should be read as a claim that submissions
+  are safely contained.
 - **No model has been evaluated against this corpus.** There is no scoring
   run, no leaderboard, and no result to cite.
 - **No performance or throughput claims are made here.** None are published
