@@ -1,0 +1,11 @@
+category: "String indexing operates on characters; truncating by byte count can split multi-byte characters"
+adapter: minitest
+provenance: authored
+statement: "Implement Truncator.truncate(str, limit). limit counts characters, not bytes. If str has limit characters or fewer, it's returned unchanged. Otherwise, the result is the leading characters of str followed by a single '…' ellipsis character, with the result containing exactly limit characters in total, never more. No character of str is ever split apart in the result - the result is always validly encoded."
+broken:
+  - id: byte_length_limit
+    misconception: "checks str.bytesize against limit and slices with byteslice instead of counting characters, so a string with multi-byte characters (accented letters, emoji) is measured and cut by byte count instead of character count, undercounting how much text actually fits and sometimes slicing inside a multi-byte character."
+  - id: mismatched_length_units
+    misconception: "decides whether to truncate at all by comparing str.bytesize to limit, but then slices by character count once it decides to truncate - the decision and the slice use different units, so a string that is short enough in characters but long in bytes gets wrongly truncated even though it should be returned unchanged."
+  - id: mechanism_free
+    misconception: "always calls str.byteslice(0, limit) with no ellipsis handling at all, the simplest attempt that ignores both the ellipsis contract and the character-vs-byte distinction entirely."

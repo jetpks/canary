@@ -1,0 +1,11 @@
+category: "protected allows cross-instance access from sibling methods; private forbids it even with an explicit receiver"
+adapter: rspec
+provenance: authored
+statement: "Implement Interval.new(start, finish), constructed with two positional numbers where start is less than or equal to finish. #overlaps?(other) returns true if the two intervals share at least one point (including two intervals that only touch at a single shared endpoint), and false otherwise - true regardless of which of the two intervals #overlaps? is called on. #to_a returns [start, finish] for the interval it's called on."
+broken:
+  - id: private_instead_of_protected
+    misconception: "the internal start/finish readers are declared private instead of protected, so calling other.finish/other.start from inside #overlaps? raises NoMethodError for any comparison against a different interval, even though the same code would be fine reading its own start/finish."
+  - id: asymmetric_overlap_check
+    misconception: "#overlaps? only checks start <= other.finish and drops the finish >= other.start half of the comparison, so an interval that starts before another one ends is reported as overlapping it even when it actually ends before that other interval starts."
+  - id: mechanism_free
+    misconception: "the internal start/finish readers are declared private instead of protected, so calling other.finish/other.start from inside #overlaps? raises NoMethodError for any comparison against a different interval - same misconception as private_instead_of_protected."

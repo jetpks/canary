@@ -1,0 +1,22 @@
+class TokenStream
+  def initialize(tokens)
+    @tokens = tokens
+    @position = 0
+  end
+
+  def next
+    raise StopIteration if @position >= @tokens.size
+
+    token = @tokens[@position]
+    @position += 1
+    token
+  end
+
+  def peek
+    self.next
+  end
+
+  def rewind
+    @position = 0
+  end
+end
