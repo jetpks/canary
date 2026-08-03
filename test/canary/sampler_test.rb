@@ -124,6 +124,23 @@ class SamplerTest < Minitest::Test
   # (the recorded claude-opus-5 sample is exactly that shape). Recording
   # only the reason code would make the sample unrecoverable after the
   # fact, so the response travels on the Failure and into the record.
+  # The one test in the suite that spends money, and the pattern every live
+  # test copies: opt in with CANARY_LIVE, skip loudly otherwise. Everything
+  # else about the provider is proven against recorded fixtures - this exists
+  # to catch the class of break a fixture cannot, where the real API changes
+  # shape underneath us and every fixture-backed test stays green.
+  def test_live_provider_completes_a_real_call
+    skip "set CANARY_LIVE=1 (and a .env with ANTHROPIC_API_KEY) to spend on the real API" unless ENV["CANARY_LIVE"]
+
+    provider = Canary::Providers::Anthropic.new(max_tokens: 16)
+
+    result = provider.sample(model: "claude-haiku-4-5-20251001", prompt: "Reply with the single word: canary")
+
+    assert result.success?, "live call failed: #{result.failure&.message}"
+    refute_empty result.success.text
+    assert_operator result.success.raw[:usage][:output_tokens], :<=, 16
+  end
+
   def test_a_truncated_sample_records_the_response_not_just_the_reason
     provider = Canary::Providers::Anthropic.new(client: client_returning(load_response("truncated")))
     sampler = build_sampler(provider: provider, max_samples: 5)
