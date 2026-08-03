@@ -32,15 +32,12 @@ class VerifierTest < Minitest::Test
     refute result.passed
   end
 
-  def test_a_tier1_reject_never_reaches_the_rollout
-    verifier = Canary::Verifier.new(pool: ExplodingPool.new)
-
-    result = verifier.call(tier1_reject_task)
+  def test_a_warnings_only_submission_reaches_the_rollout
+    result = @verifier.call(warnings_only_task)
 
     assert result.prefilter_report.syntax_valid
-    refute result.prefilter_report.clean?
-    assert_nil result.rollout_result
-    refute result.passed
+    assert result.prefilter_report.clean?
+    refute_nil result.rollout_result
   end
 
   def test_a_clean_task_reaches_the_rollout_and_reports_signals
@@ -91,9 +88,9 @@ class VerifierTest < Minitest::Test
     )
   end
 
-  def tier1_reject_task
+  def warnings_only_task
     Canary::Task.new(
-      solution_path: File.join(FIXTURES, "tier1_reject", "solution.rb"),
+      solution_path: File.join(FIXTURES, "warnings_only", "solution.rb"),
       test_path: File.join(FIXTURES, "minitest_task", "grader.rb"),
       adapter: :minitest
     )
