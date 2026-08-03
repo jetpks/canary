@@ -1,0 +1,11 @@
+category: "Numeric#coerce: how `5 + fraction` dispatches when the left operand doesn't know how to add a Fraction"
+adapter: minitest
+provenance: authored
+statement: "Implement Fraction.new(numerator, denominator), constructed with two positive integers, exposed unchanged (no reduction to lowest terms) via public #numerator and #denominator readers. #+(other) returns a new Fraction representing the sum of self and other, where other may be another Fraction or a plain Integer - e.g. Fraction.new(1, 2) + Fraction.new(1, 3) equals Fraction.new(5, 6), and Fraction.new(1, 2) + 1 equals Fraction.new(3, 2). Writing the Integer first, as in 1 + Fraction.new(1, 2) or 2 + Fraction.new(1, 4), must also work and produce the same Fraction that adding it the other way around would. Two Fractions are == when their numerator and denominator are equal to each other, without needing to be the same object."
+broken:
+  - id: no_coerce
+    misconception: "only #+ is implemented, so Fraction + Fraction and Fraction + Integer both work, but Integer + Fraction raises TypeError since Integer#+ has no idea how to add a Fraction and nothing tells it how."
+  - id: coerce_flips_conversion
+    misconception: "coerce is implemented but converts the Integer operand into Fraction.new(1, other) instead of Fraction.new(other, 1) - the numerator and denominator are swapped, so Integer + Fraction produces a wrong value whenever the Integer isn't 1, even though the coercion path itself now runs without raising."
+  - id: mechanism_free
+    misconception: "only #+ is implemented, so Fraction + Fraction and Fraction + Integer both work, but Integer + Fraction raises TypeError since Integer#+ has no idea how to add a Fraction and nothing tells it how - same misconception as no_coerce."
