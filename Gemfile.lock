@@ -4,6 +4,7 @@ PATH
     canary (0.1.0)
       anthropic (~> 1.59)
       async (~> 2.43)
+      base64
       dry-monads (~> 1.10)
       minitest (~> 6.0)
       rspec-core (~> 3.13)
@@ -97,7 +98,6 @@ PLATFORMS
   ruby
 
 DEPENDENCIES
-  base64
   canary!
   rake (~> 13.0)
 
