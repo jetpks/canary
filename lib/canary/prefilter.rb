@@ -6,9 +6,14 @@ module Canary
   # reports structured findings. It exists to reject what can be rejected
   # for free, before a rollout is paid for - it never scores or grades.
   #
-  # Tier 0 (Prism.parse) is in-process and pays only parse cost. Tier 1
-  # (RuboCop's Lint department, in-process) only runs once tier 0 succeeds,
-  # since there is no point linting code that doesn't parse.
+  # Tier 0 (Prism.parse) is in-process, pays only parse cost, and is always
+  # on. Tier 1 (RuboCop's Lint department, in-process) is OPT-IN via
+  # `lint: true` and off by default: it flagged idiomatic Ruby (e.g.
+  # `Math::PI * r**2` under Lint/AmbiguousOperatorPrecedence) as a hard
+  # reject, rejecting correct solutions before a rollout ever ran. Per the
+  # human ruling, style linting is dropped for now, not deleted - the code
+  # stays behind the flag because the pinned ConfigStore below is a security
+  # control, not just linting infrastructure.
   class Prefilter
     # The config RuboCop's Lint cops run under is pinned to canary's own
     # .rubocop.yml (see .config_store) rather than resolved by walking up
@@ -49,8 +54,8 @@ module Canary
       end
     end
 
-    def self.call(submission_path)
-      new(submission_path).call
+    def self.call(submission_path, lint: false)
+      new(submission_path, lint: lint).call
     end
 
     # Shared across calls: parsing .rubocop.yml on every submission would
@@ -61,15 +66,16 @@ module Canary
       @config_store ||= RuboCop::ConfigStore.new.tap { |store| store.options_config = CONFIG_PATH }
     end
 
-    def initialize(submission_path)
+    def initialize(submission_path, lint: false)
       @submission_path = submission_path
       @source = File.read(submission_path)
+      @lint = lint
     end
 
     def call
       parse = Prism.parse(@source)
       findings = tier0_findings(parse)
-      findings.concat(tier1_findings) if parse.success?
+      findings.concat(tier1_findings) if @lint && parse.success?
 
       Report.new(syntax_valid: parse.success?, truncated: truncated?(parse), findings: findings)
     end

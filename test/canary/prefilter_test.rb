@@ -32,8 +32,22 @@ class PrefilterTest < Minitest::Test
     refute report.clean?
   end
 
-  def test_lint_finding_is_reported_without_executing_the_submission
+  def test_lint_tier_is_off_by_default
     report = prefilter(<<~RUBY)
+      class Circle
+        def area(r)
+          Math::PI * r**2
+        end
+      end
+    RUBY
+
+    assert report.syntax_valid
+    refute report.truncated
+    assert report.clean?
+  end
+
+  def test_lint_finding_is_reported_when_opted_in_without_executing_the_submission
+    report = prefilter(<<~RUBY, lint: true)
       def foo
         x = 1
         x = 2
@@ -60,7 +74,7 @@ class PrefilterTest < Minitest::Test
   def test_hostile_rubocop_yml_cannot_silence_the_gate
     fixture = File.join(__dir__, "prefilter_fixtures", "hostile_rubocop_yml", "submission.rb")
 
-    report = Canary::Prefilter.call(fixture)
+    report = Canary::Prefilter.call(fixture, lint: true)
 
     cop_names = report.findings.select { |f| f.tier == 1 }.map(&:type)
     assert_includes cop_names, "Lint/UselessAssignment"
@@ -69,11 +83,11 @@ class PrefilterTest < Minitest::Test
 
   private
 
-  def prefilter(source)
+  def prefilter(source, lint: false)
     file = Tempfile.new(%w[prefilter_submission .rb])
     file.write(source)
     file.close
-    Canary::Prefilter.call(file.path)
+    Canary::Prefilter.call(file.path, lint: lint)
   ensure
     file&.unlink
   end
