@@ -13,6 +13,7 @@ require_relative "canary/providers/fake"
 require_relative "canary/sampler"
 require_relative "canary/eval/record"
 require_relative "canary/eval/report"
+require_relative "canary/eval/completion_sink"
 require_relative "canary/eval/runner"
 
 module Canary

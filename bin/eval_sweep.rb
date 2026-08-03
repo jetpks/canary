@@ -3,13 +3,21 @@
 require_relative "../lib/canary"
 require "fileutils"
 require "json"
-require "tempfile"
 
 # Runs the frozen I15 sweep shape and commits the resulting
-# Canary::Eval::Record set under results/: all 13 tasks x k=3 x
-# {claude-haiku-4-5-20251001, claude-sonnet-5} hidden, plus the same 13
-# tasks x k=1 x claude-haiku-4-5-20251001 grader-visible - 91 live calls
-# total.
+# Canary::Eval::Record set, and the raw completions that produced them,
+# under results/: all 13 tasks x k=3 x {claude-haiku-4-5-20251001,
+# claude-sonnet-5} hidden, plus the same 13 tasks x k=1 x
+# claude-haiku-4-5-20251001 grader-visible - 91 live calls total.
+#
+# Records and completions for one run live together under one
+# results/run-<timestamp>/ directory, and a later run lands in its own
+# fresh directory rather than overwriting an earlier one's evidence -
+# results/sweep.jsonl, I15's run, is exactly the run this replaces, and it
+# stays on disk untouched as a result (I15 F2: a run you can't re-score is
+# a run you have to re-buy). Both files are written incrementally, as each
+# record/completion lands, rather than batched at the end: an exception on
+# call 90 must not cost the 89 samples already paid for.
 #
 # Opt-in the same way the rest of the suite is: nothing reads .env or
 # spends a cent unless CANARY_LIVE=1 is set (test/test_helper.rb's own
@@ -54,6 +62,12 @@ module EvalSweep
     abort "CANARY_LIVE is set but no ANTHROPIC_API_KEY was loaded - is .env present?" unless ENV["ANTHROPIC_API_KEY"]
   end
 
+  # One fresh directory per run, so a rerun supersedes rather than
+  # overwrites - see the module comment.
+  def self.new_run_dir
+    File.join(RESULTS_DIR, Time.now.utc.strftime("run-%Y%m%dT%H%M%SZ"))
+  end
+
   def self.run
     load_env!
 
@@ -61,27 +75,40 @@ module EvalSweep
     total_calls = (tasks.size * HIDDEN_K * HIDDEN_MODELS.size) + (tasks.size * VISIBLE_K * VISIBLE_MODELS.size)
     budget = Canary::Sampler::Budget.new(max_samples: total_calls)
     spend_guard = Canary::Sampler::SpendGuard.new(max_dollars: SPEND_CAP_DOLLARS, price_table: PRICE_TABLE)
-    sink_path = Tempfile.new(%w[eval_sweep_requests .jsonl]).path
+
+    run_dir = new_run_dir
+    FileUtils.mkdir_p(run_dir)
+    records_path = File.join(run_dir, "sweep.jsonl")
+    completions_path = File.join(run_dir, "completions.jsonl")
+
     sampler = Canary::Sampler.new(
       provider: Canary::Providers::Anthropic.new,
       budget: budget,
-      record_sink: Canary::Sampler::RecordSink.new(path: sink_path),
+      # CompletionSink corrects Sampler's own per-call sample_index (always
+      # 0 here - Runner calls Sampler#call with n: 1 per job, one Job per
+      # sample, so the k-many concurrency lives in Runner, not Sampler's
+      # internal loop) to the sample_index Runner's job actually is, so
+      # every completion on disk is joinable to the Record it produced.
+      record_sink: Canary::Eval::CompletionSink.new(Canary::Sampler::RecordSink.new(path: completions_path)),
       spend_guard: spend_guard
     )
     runner = Canary::Eval::Runner.new(sampler: sampler)
+    append_record = ->(record) { File.open(records_path, "a") { |f| f.puts(JSON.generate(record.to_h)) } }
 
     puts "spend guard cap: $#{SPEND_CAP_DOLLARS}"
     puts "budget cap: #{total_calls} samples"
     puts "hidden arm: #{tasks.size} tasks x k=#{HIDDEN_K} x #{HIDDEN_MODELS.join(', ')}"
-    hidden = runner.call(entries: tasks, models: HIDDEN_MODELS, k: HIDDEN_K, grader: false)
+    hidden = runner.call(entries: tasks, models: HIDDEN_MODELS, k: HIDDEN_K, grader: false, &append_record)
 
     puts "grader-visible arm: #{tasks.size} tasks x k=#{VISIBLE_K} x #{VISIBLE_MODELS.join(', ')}"
-    visible = runner.call(entries: tasks, models: VISIBLE_MODELS, k: VISIBLE_K, grader: true)
+    visible = runner.call(entries: tasks, models: VISIBLE_MODELS, k: VISIBLE_K, grader: true, &append_record)
 
     records = hidden + visible
     report_spend(records)
-    write_records(records)
-    write_summary(records)
+    write_summary(records, run_dir)
+    puts "wrote #{records.size} records to #{records_path}"
+    puts "wrote completions to #{completions_path}"
+    records_path
   end
 
   def self.record_cost(record)
@@ -98,21 +125,13 @@ module EvalSweep
     puts format("actual spend (from recorded token usage x price table): $%.4f", spend)
   end
 
-  def self.write_records(records)
-    FileUtils.mkdir_p(RESULTS_DIR)
-    path = File.join(RESULTS_DIR, "sweep.jsonl")
-    File.open(path, "w") { |f| records.each { |record| f.puts(JSON.generate(record.to_h)) } }
-    puts "wrote #{records.size} records to #{path}"
-    path
-  end
-
-  def self.write_summary(records)
+  def self.write_summary(records, run_dir)
     lines = ["# Canary eval sweep", ""]
     records.group_by { |record| [record.model, record.render_mode] }.sort.each do |(model, mode), arm_records|
       lines.concat(arm_section(model, mode, arm_records))
     end
 
-    path = File.join(RESULTS_DIR, "summary.md")
+    path = File.join(run_dir, "summary.md")
     File.write(path, lines.join("\n"))
     puts "wrote summary to #{path}"
     path
@@ -125,8 +144,8 @@ module EvalSweep
     lines = ["## #{model} / #{mode}", ""]
     lines << "- scored: #{report.scored_count}, non_score: #{report.non_score_count}"
     lines << "- non_scores_by_reason: #{report.non_scores_by_reason}"
-    lines << "- pass_at_1: #{report.pass_at_1.inspect}"
-    lines << "- pass_at_#{k}: #{report.pass_at_k(k).inspect}" if k && k > 1
+    lines << "- pass_at_1: #{report.pass_at_1.inspect} (tasks_counted: #{report.tasks_counted(1)})"
+    lines << "- pass_at_#{k}: #{report.pass_at_k(k).inspect} (tasks_counted: #{report.tasks_counted(k)})" if k && k > 1
     lines << ""
     lines.concat(task_table(arm_records))
     lines << ""

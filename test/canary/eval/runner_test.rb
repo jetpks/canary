@@ -1,6 +1,7 @@
 require "test_helper"
 require "async"
 require "tempfile"
+require "json"
 
 # Proves Canary::Eval::Runner's own contract against Canary::Providers::Fake
 # and a real Canary::Verifier/Canary::Pool (cheap, no network): the render
@@ -14,6 +15,13 @@ class RunnerTest < Minitest::Test
   VALID_CODE_RESPONSE = "Here you go:\n\n```ruby\nclass Adder\n  def self.call(a, b)\n    a + b\n  end\nend\n```\n"
   WRONG_CODE_RESPONSE = "```ruby\nclass Adder\n  def self.call(a, b)\n    a - b\n  end\nend\n```"
   NO_FENCE_RESPONSE = "Sure, here is the answer: Adder.call adds two numbers."
+  # Same shape as prefilter_test.rb's own truncation fixture: a parse error
+  # anchored at EOF, inside a fence the extractor hands through unclosed
+  # (extractor.rb:43-51) rather than refusing.
+  TRUNCATED_CODE_RESPONSE = "```ruby\ndef foo\n  a = 1\n  if a"
+  # A mid-file break (not anchored at EOF) - structurally invalid, but NOT
+  # truncated, so this must stay a scored failure, not a non-score.
+  MID_FILE_BREAK_RESPONSE = "```ruby\nclass Adder\n  def self.call(a, b)\n    @x = = 1\n  end\nend\n```"
 
   def test_fans_out_over_models_and_k_and_defaults_to_hidden_mode
     sampler = build_sampler(success_fake(VALID_CODE_RESPONSE))
@@ -97,6 +105,55 @@ class RunnerTest < Minitest::Test
     assert_equal 10, records.size
     assert_operator max_concurrent, :<=, 3
     assert_operator max_concurrent, :>, 1, "expected genuine overlap under the semaphore, not accidental sequencing"
+  end
+
+  # Runner#call never returns to the caller here - the raise propagates out
+  # of Sync - so the only way a record can be sitting on disk after rescue
+  # is if the on_record callback wrote it there DURING the run, not from
+  # Runner#call's return value (I15 F2: an exception on a later call must
+  # not cost already-completed, already-paid-for samples).
+  def test_incremental_records_reach_disk_even_when_a_job_raises_mid_run
+    sink_file = Tempfile.new(%w[incremental_records .jsonl])
+    call_count = 0
+    fake = Canary::Providers::Fake.new do |model:, prompt:|
+      call_count += 1
+      raise "boom on call #{call_count}" if call_count == 3
+      Dry::Monads::Success(Canary::Providers::Sample.new(text: VALID_CODE_RESPONSE, raw: {stop_reason: :end_turn, usage: {input_tokens: 1, output_tokens: 1}}))
+    end
+    runner = Canary::Eval::Runner.new(sampler: build_sampler(fake, max_samples: 10), concurrency: 1)
+
+    assert_raises(RuntimeError) do
+      runner.call(entries: [build_entry], models: ["fixture-model"], k: 5, grader: false) do |record|
+        File.open(sink_file.path, "a") { |f| f.puts(JSON.generate(record.to_h)) }
+      end
+    end
+
+    on_disk = File.readlines(sink_file.path).map { |line| JSON.parse(line) }
+    refute_empty on_disk
+    assert_operator on_disk.size, :<, 5, "the job that raised must not itself have yielded a record"
+    assert(on_disk.all? { |r| r["scored"] })
+  ensure
+    sink_file&.unlink
+  end
+
+  def test_a_prefilter_reject_caused_by_truncation_is_a_non_score_never_a_passed_verdict
+    runner = Canary::Eval::Runner.new(sampler: build_sampler(success_fake(TRUNCATED_CODE_RESPONSE)))
+
+    record = runner.call(entries: [build_entry], models: ["fixture-model"], k: 1, grader: false).first
+
+    refute record.scored?
+    assert_equal :truncated, record.non_score_reason
+    assert_nil record.passed
+  end
+
+  def test_a_prefilter_reject_not_caused_by_truncation_stays_a_scored_failure
+    runner = Canary::Eval::Runner.new(sampler: build_sampler(success_fake(MID_FILE_BREAK_RESPONSE)))
+
+    record = runner.call(entries: [build_entry], models: ["fixture-model"], k: 1, grader: false).first
+
+    assert record.scored?
+    assert_nil record.non_score_reason
+    refute record.passed
   end
 
   private

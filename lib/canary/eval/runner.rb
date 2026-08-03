@@ -41,18 +41,30 @@ module Canary
       # +entries+ is an Array of Canary::TaskRepo::Entry, +models+ an Array
       # of model name strings. Returns one Record per (entry, model, k)
       # combination - order is not significant, Report groups by task_name.
-      def call(entries:, models:, k:, grader: false)
+      #
+      # A block, if given, is called with each Record as soon as its job
+      # completes - before the run as a whole returns - so a caller can
+      # persist records as they land instead of losing everything already
+      # paid for when a later job raises (I15 F2). A job that raises is not
+      # caught here: it propagates out of Sync and aborts the run, and does
+      # not itself yield a Record - it is a harness crash, not a model
+      # non-score, and the two must not be reported the same way.
+      def call(entries:, models:, k:, grader: false, &on_record)
         jobs = entries.product(models).flat_map { |entry, model| Array.new(k) { |index| Job.new(entry, model, index, grader) } }
 
         Sync do
           semaphore = Async::Semaphore.new(@concurrency)
-          jobs.map { |job| semaphore.async { run_one(job) } }.map(&:wait)
+          jobs.map { |job| semaphore.async { run_one(job).tap { |record| on_record&.call(record) } } }.map(&:wait)
         end
       end
 
       private
 
+      # Fiber[CompletionSink::SAMPLE_INDEX] hands this job's index to
+      # Sampler's record_sink across a frozen method signature - see
+      # CompletionSink for why Sampler's own index can't be trusted here.
       def run_one(job)
+        Fiber[CompletionSink::SAMPLE_INDEX] = job.index
         result = @sampler.call(job.entry, model: job.model, n: 1, grader: job.grader).first
 
         return provider_failure_record(job, result.failure) if result.failure?
@@ -63,6 +75,8 @@ module Canary
         return extractor_refusal_record(job, sample, extracted) unless extracted.outcome == :ok
 
         verified_record(job, sample, extracted)
+      ensure
+        Fiber[CompletionSink::SAMPLE_INDEX] = nil
       end
 
       # A provider Failure never reached the extractor or the verifier - the
@@ -96,9 +110,11 @@ module Canary
       end
 
       # A genuine verdict: the extracted code got a real shot at the
-      # verifier, whatever it did there. A prefilter reject or a failed
-      # rollout is scored: true, passed: false - that is the model's own
-      # code falling short, not a harness limitation.
+      # verifier, whatever it did there. A prefilter reject is scored:
+      # true, passed: false - the model's own code falling short - UNLESS
+      # the prefilter rejected it because the generation was cut off
+      # mid-construct (Prefilter::Report#truncated), which is a harness
+      # limitation and a non-score like any other (R3).
       def verified_record(job, sample, extracted)
         Tempfile.create(["canary_eval_", ".rb"]) do |file|
           file.write(extracted.code)
@@ -106,6 +122,8 @@ module Canary
 
           task = Task.new(solution_path: file.path, test_path: job.entry.reference.test_path, adapter: job.entry.adapter)
           result = @verifier.call(task)
+
+          next truncated_record(job, sample, extracted) if result.prefilter_report.truncated
 
           Record.new(**identity_fields(job),
             scored: true,
@@ -121,6 +139,18 @@ module Canary
             input_tokens: sample.raw.dig(:usage, :input_tokens),
             output_tokens: sample.raw.dig(:usage, :output_tokens))
         end
+      end
+
+      def truncated_record(job, sample, extracted)
+        Record.new(**identity_fields(job),
+          scored: false,
+          non_score_reason: :truncated,
+          passed: nil,
+          prefilter_clean: false,
+          extractor_outcome: extracted.outcome,
+          stop_reason: sample.raw[:stop_reason],
+          input_tokens: sample.raw.dig(:usage, :input_tokens),
+          output_tokens: sample.raw.dig(:usage, :output_tokens))
       end
 
       def identity_fields(job)

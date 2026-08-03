@@ -39,6 +39,14 @@ module Canary
         rates.sum / rates.size.to_f
       end
 
+      # How many tasks pass_at_k(k) is actually averaged over - the
+      # denominator filter_map's drop of under-sampled tasks leaves
+      # invisible in the rate alone (I15 F3). Same scoping as pass_at_k:
+      # a task counts once it has at least k scored samples.
+      def tasks_counted(k)
+        grouped_by_task.count { |_task_name, records| records.size >= k }
+      end
+
       private
 
       def scored_records
