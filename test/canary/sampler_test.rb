@@ -78,6 +78,31 @@ class SamplerTest < Minitest::Test
     end
   end
 
+  def test_base_index_offsets_recorded_indices_the_same_as_repeated_n1_calls_at_successive_bases
+    batched_path = Tempfile.new(%w[batched_records .jsonl]).path
+    sequential_path = Tempfile.new(%w[sequential_records .jsonl]).path
+
+    batched_sampler = Canary::Sampler.new(
+      provider: Canary::Providers::Fake.new,
+      budget: Canary::Sampler::Budget.new(max_samples: 5),
+      record_sink: Canary::Sampler::RecordSink.new(path: batched_path)
+    )
+    batched_sampler.call(@entry, model: "claude-fixture-model", n: 3)
+
+    sequential_sampler = Canary::Sampler.new(
+      provider: Canary::Providers::Fake.new,
+      budget: Canary::Sampler::Budget.new(max_samples: 5),
+      record_sink: Canary::Sampler::RecordSink.new(path: sequential_path)
+    )
+    [0, 1, 2].each { |base| sequential_sampler.call(@entry, model: "claude-fixture-model", n: 1, base_index: base) }
+
+    batched_indices = File.readlines(batched_path).map { |line| JSON.parse(line)["sample_index"] }
+    sequential_indices = File.readlines(sequential_path).map { |line| JSON.parse(line)["sample_index"] }
+
+    assert_equal [0, 1, 2], batched_indices
+    assert_equal [0, 1, 2], sequential_indices
+  end
+
   def test_a_budget_blocked_sample_is_never_recorded
     fake = Canary::Providers::Fake.new
     sampler = build_sampler(provider: fake, max_samples: 0)

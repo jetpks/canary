@@ -84,12 +84,7 @@ module EvalSweep
     sampler = Canary::Sampler.new(
       provider: Canary::Providers::Anthropic.new,
       budget: budget,
-      # CompletionSink corrects Sampler's own per-call sample_index (always
-      # 0 here - Runner calls Sampler#call with n: 1 per job, one Job per
-      # sample, so the k-many concurrency lives in Runner, not Sampler's
-      # internal loop) to the sample_index Runner's job actually is, so
-      # every completion on disk is joinable to the Record it produced.
-      record_sink: Canary::Eval::CompletionSink.new(Canary::Sampler::RecordSink.new(path: completions_path)),
+      record_sink: Canary::Sampler::RecordSink.new(path: completions_path),
       spend_guard: spend_guard
     )
     runner = Canary::Eval::Runner.new(sampler: sampler)
