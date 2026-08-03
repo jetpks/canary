@@ -1,0 +1,25 @@
+#!/usr/bin/env ruby
+
+require_relative "../lib/canary"
+require "async"
+require "async/http/endpoint"
+require "async/http/server"
+
+# Boots the single-shot wire surface (R6): one OS process hosting the
+# reactor and a preloaded Canary::Pool together - Falcon is not a
+# dependency, and this deliberately does not use its container/service
+# DSL. Process count is 1, explicitly: a container's default --count is
+# processor_count, which would pay the pool's preload tax once per core
+# for nothing here.
+begin
+  config = Canary::Server::Config.resolve(argv: ARGV)
+rescue Canary::Server::Config::MissingToken => e
+  abort(e.message)
+end
+
+endpoint = Async::HTTP::Endpoint.parse("http://#{config.bind}:#{config.port}")
+app = Canary::Server::Auth.new(Canary::Server.new(concurrency: config.concurrency), token: config.token)
+
+Sync do
+  Async::HTTP::Server.new(app, endpoint).run.wait
+end

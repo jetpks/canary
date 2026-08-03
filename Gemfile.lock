@@ -4,9 +4,11 @@ PATH
     canary (0.1.0)
       anthropic (~> 1.59)
       async (~> 2.43)
+      async-http (~> 0.99)
       base64
       dry-monads (~> 1.10)
       minitest (~> 6.0)
+      protocol-http (~> 0.68)
       rspec-core (~> 3.13)
       rspec-expectations (~> 3.13)
       rspec-mocks (~> 3.13)
@@ -24,6 +26,17 @@ GEM
       console (~> 1.29)
       fiber-annotation
       io-event (~> 1.11)
+    async-http (0.99.0)
+      async (>= 2.35.1)
+      async-pool (~> 0.11)
+      io-endpoint (~> 0.14)
+      io-stream (~> 0.14)
+      protocol-http (~> 0.66)
+      protocol-http1 (~> 0.39)
+      protocol-http2 (~> 0.26)
+      protocol-url (~> 0.2)
+    async-pool (0.11.2)
+      async (>= 2.0)
     base64 (0.3.0)
     cgi (0.5.2)
     concurrent-ruby (1.3.8)
@@ -46,7 +59,10 @@ GEM
     fiber-local (1.1.0)
       fiber-storage
     fiber-storage (1.0.1)
+    io-endpoint (0.17.2)
     io-event (1.19.4)
+    io-stream (0.14.0)
+      openssl (>= 3.3)
     json (2.21.2)
     language_server-protocol (3.17.0.6)
     lint_roller (1.1.0)
@@ -54,11 +70,20 @@ GEM
     minitest (6.0.6)
       drb (~> 2.0)
       prism (~> 1.5)
+    openssl (4.0.2)
     parallel (2.1.0)
     parser (3.3.12.0)
       ast (~> 2.4.1)
       racc
     prism (1.9.0)
+    protocol-hpack (1.5.1)
+    protocol-http (0.68.0)
+    protocol-http1 (0.40.0)
+      protocol-http (~> 0.68)
+    protocol-http2 (0.26.2)
+      protocol-hpack (~> 1.4)
+      protocol-http (~> 0.62)
+    protocol-url (0.7.0)
     racc (1.8.1)
     rainbow (3.1.1)
     rake (13.4.2)
@@ -105,6 +130,8 @@ CHECKSUMS
   anthropic (1.59.0) sha256=fe987f143226d78544bddc5d4a32bdcc0e9a70a996dfbcdbbaf2e4c296335cda
   ast (2.4.3) sha256=954615157c1d6a382bc27d690d973195e79db7f55e9765ac7c481c60bdb4d383
   async (2.44.0) sha256=888e0edda9643fac7bbdfd3073fee1713d62a586dbebaefbcc579e505c166a5a
+  async-http (0.99.0) sha256=665eba5e530b05a9682c78b3aa5a51e97dd67b8b25b71ba76530b60cf6c26a11
+  async-pool (0.11.2) sha256=0a43a17b02b04d9c451b7d12fafa9a50e55dc6dd00d4369aca00433f16a7e3ed
   base64 (0.3.0) sha256=27337aeabad6ffae05c265c450490628ef3ebd4b67be58257393227588f5a97b
   canary (0.1.0)
   cgi (0.5.2) sha256=61ca30298171190fd4fa0d8018e57ada456eae9b7a2b78526debf7f0a0e6f8bb
@@ -118,15 +145,23 @@ CHECKSUMS
   fiber-annotation (0.2.0) sha256=7abfadf1d119f508867d4103bf231c0354d019cc39a5738945dec2edadaf6c03
   fiber-local (1.1.0) sha256=c885f94f210fb9b05737de65d511136ea602e00c5105953748aa0f8793489f06
   fiber-storage (1.0.1) sha256=f48e5b6d8b0be96dac486332b55cee82240057065dc761c1ea692b2e719240e1
+  io-endpoint (0.17.2) sha256=3feaf766c116b35839c11fac68b6aaadc47887bb488902a57bf8e1d288fb3338
   io-event (1.19.4) sha256=c291146e2e70849b9d6b64078f8e98f0154bfd3bc4f9759861ff13e9895e0cce
+  io-stream (0.14.0) sha256=07d9b13ea2066ccbbc761fff8d69ad5a31e47561d31e02cc271f3ed9c1a8f1cd
   json (2.21.2) sha256=1f1d3b7cf2b3ba1a69beca0bb6db13d5438b80bff3cd54cdaaa620b9b07c1c6a
   language_server-protocol (3.17.0.6) sha256=5ef2c0c138f8267e1bc631d3328347d354f96724b0af22f2c79516120443b7f0
   lint_roller (1.1.0) sha256=2c0c845b632a7d172cb849cc90c1bce937a28c5c8ccccb50dfd46a485003cc87
   logger (1.7.0) sha256=196edec7cc44b66cfb40f9755ce11b392f21f7967696af15d274dde7edff0203
   minitest (6.0.6) sha256=153ea36d1d987a62942382b61075745042a2b3123b1cd48f4c3675af9cc7d6f1
+  openssl (4.0.2) sha256=1037ad2868ae58df9ad917891c0c0f9815a1172f6846d4bcdd508e4c2ee747c2
   parallel (2.1.0) sha256=b35258865c2e31134c5ecb708beaaf6772adf9d5efae28e93e99260877b09356
   parser (3.3.12.0) sha256=21a6d7f755d5a24dfbdc6e6b772e4e879a52e7631a88bc5a3a134606052c9828
   prism (1.9.0) sha256=7b530c6a9f92c24300014919c9dcbc055bf4cdf51ec30aed099b06cd6674ef85
+  protocol-hpack (1.5.1) sha256=6feca238b8078da1cd295677d6f306c6001af92d75fe0643d33e6956cbc3ad91
+  protocol-http (0.68.0) sha256=95c4c19e437aac3d03266f4557ab4bd58bccb134371cd3f5243f46701db0a4ca
+  protocol-http1 (0.40.0) sha256=4e9247a1243bcaa65f1888eeede224398919f15db3d77ae83e2f329f0cb02fb6
+  protocol-http2 (0.26.2) sha256=1457cfaa31877512c349051e0094ea170b8913a62d966b82ff7cd14e4b1a3ede
+  protocol-url (0.7.0) sha256=64af8d4d8ea7daecfd80237f5a4be3fe16892a3f72d32491a6b6d0f411143b7e
   racc (1.8.1) sha256=4a7f6929691dbec8b5209a0b373bc2614882b55fc5d2e447a21aaa691303d62f
   rainbow (3.1.1) sha256=039491aa3a89f42efa1d6dec2fc4e62ede96eb6acd95e52f1ad581182b79bc6a
   rake (13.4.2) sha256=cb825b2bd5f1f8e91ca37bddb4b9aaf345551b4731da62949be002fa89283701

@@ -15,6 +15,7 @@ require_relative "canary/sampler"
 require_relative "canary/eval/record"
 require_relative "canary/eval/report"
 require_relative "canary/eval/runner"
+require_relative "canary/server"
 
 module Canary
 end

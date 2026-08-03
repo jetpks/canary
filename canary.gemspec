@@ -27,6 +27,7 @@ Gem::Specification.new do |spec|
 
   spec.add_dependency "anthropic", "~> 1.59"
   spec.add_dependency "async", "~> 2.43"
+  spec.add_dependency "async-http", "~> 0.99"
   # base64 stopped shipping as a Ruby default gem as of 3.4 (we're on 4.0), and
   # anthropic-1.59.0's lib/anthropic.rb:6 `require "base64"`s unconditionally
   # without declaring it in its own gemspec. It is a RUNTIME dependency here:
@@ -36,6 +37,7 @@ Gem::Specification.new do |spec|
   spec.add_dependency "base64"
   spec.add_dependency "dry-monads", "~> 1.10"
   spec.add_dependency "minitest", "~> 6.0"
+  spec.add_dependency "protocol-http", "~> 0.68"
   spec.add_dependency "rspec-core", "~> 3.13"
   spec.add_dependency "rspec-expectations", "~> 3.13"
   spec.add_dependency "rspec-mocks", "~> 3.13"
