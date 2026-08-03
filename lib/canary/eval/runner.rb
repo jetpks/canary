@@ -98,7 +98,7 @@ module Canary
           non_score_reason: :extractor_refusal,
           passed: nil,
           extractor_outcome: extracted.outcome,
-          stop_reason: sample.raw[:stop_reason],
+          stop_reason: sample.stop_reason,
           input_tokens: sample.raw.dig(:usage, :input_tokens),
           output_tokens: sample.raw.dig(:usage, :output_tokens))
       end
@@ -129,7 +129,7 @@ module Canary
             total_examples: result.rollout_result&.total,
             coverage_fraction: coverage_fraction(result.rollout_result, file.path),
             extractor_outcome: extracted.outcome,
-            stop_reason: sample.raw[:stop_reason],
+            stop_reason: sample.stop_reason,
             input_tokens: sample.raw.dig(:usage, :input_tokens),
             output_tokens: sample.raw.dig(:usage, :output_tokens))
         end
@@ -142,7 +142,7 @@ module Canary
           passed: nil,
           prefilter_clean: false,
           extractor_outcome: extracted.outcome,
-          stop_reason: sample.raw[:stop_reason],
+          stop_reason: sample.stop_reason,
           input_tokens: sample.raw.dig(:usage, :input_tokens),
           output_tokens: sample.raw.dig(:usage, :output_tokens))
       end
