@@ -58,10 +58,12 @@ class PromptTest < Minitest::Test
   def test_hidden_mode_leaks_no_entry_field_other_than_statement
     entry = build_sentinel_entry
     text = Canary::Prompt.render(entry).text
+    checked_members = Canary::TaskRepo::Entry.members - [:statement]
 
-    Canary::TaskRepo::Entry.members.each do |member|
-      next if member == :statement
+    nil_members = checked_members.select { |member| entry[member].nil? }
+    assert_empty nil_members, "sentinel entry must supply a non-nil sentinel for every member so the leak check below isn't vacuous; nil for #{nil_members.inspect}"
 
+    checked_members.each do |member|
       refute_includes text, entry[member].to_s, "Entry##{member} leaked into the hidden-mode prompt"
     end
   end
@@ -91,6 +93,8 @@ class PromptTest < Minitest::Test
       category: "SENTINEL_CATEGORY_7c1e",
       statement: "SENTINEL_STATEMENT_7c1e is the only sentinel allowed to appear.",
       adapter: :SENTINEL_ADAPTER_7c1e,
+      provenance: "SENTINEL_PROVENANCE_7c1e",
+      source_attestation: "SENTINEL_SOURCE_ATTESTATION_7c1e",
       reference: reference_task,
       broken_solutions: [
         Canary::TaskRepo::BrokenSolution.new(

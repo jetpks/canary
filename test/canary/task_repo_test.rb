@@ -222,6 +222,14 @@ class TaskRepoTest < Minitest::Test
     end
   end
 
+  # AC8: provenance and source_attestation are real Entry members (not
+  # bolted-on attr_readers), so exhaustive per-field reflection elsewhere
+  # (prompt_test.rb's leak guard) sees them like any other field.
+  def test_entry_members_include_provenance_and_source_attestation
+    assert_includes Canary::TaskRepo::Entry.members, :provenance
+    assert_includes Canary::TaskRepo::Entry.members, :source_attestation
+  end
+
   # AC9: every task carries provenance, and any future sourced task without
   # a source_attestation fails loudly - not a hardcoded list, every entry
   # TaskRepo.all resolves right now, same shape as the mechanism_free test

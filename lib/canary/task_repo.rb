@@ -14,19 +14,17 @@ module Canary
     # training-data cutoff attestation a sourced task must carry - nil for
     # an authored one, since there's nothing to attest to.
     #
-    # Deliberately kept off the Struct's own member list (set via a custom
-    # #initialize instead of Struct.new(:provenance, ...)) rather than
-    # exposed through #[]/#members: Entry.members is used elsewhere for
-    # exhaustive per-field reflection, and a member whose correct value is
-    # nil - #source_attestation on every authored task - has no honest
-    # non-nil placeholder to satisfy that.
-    Entry = Struct.new(:name, :category, :statement, :adapter, :reference, :broken_solutions, keyword_init: true) do
-      attr_reader :provenance, :source_attestation
-
+    # Both are real members of the Struct (Entry.members includes them), so
+    # exhaustive per-field reflection elsewhere (prompt_test.rb's
+    # test_hidden_mode_leaks_no_entry_field_other_than_statement) sees them
+    # like any other field. The custom #initialize exists only to default
+    # provenance: "authored" and source_attestation: nil when a caller
+    # doesn't pass them, so every existing Entry.new call site - #load_task
+    # below and every test that builds an Entry without naming these two -
+    # keeps working unmodified.
+    Entry = Struct.new(:name, :category, :statement, :adapter, :reference, :broken_solutions, :provenance, :source_attestation, keyword_init: true) do
       def initialize(provenance: "authored", source_attestation: nil, **rest)
-        super(**rest)
-        @provenance = provenance
-        @source_attestation = source_attestation
+        super(**rest, provenance: provenance, source_attestation: source_attestation)
       end
     end
 
