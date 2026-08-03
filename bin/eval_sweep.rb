@@ -6,8 +6,8 @@ require "json"
 
 # Runs the I19-widened sweep shape and commits the resulting
 # Canary::Eval::Record set, and the raw completions that produced them,
-# under results/: 13 tasks x k=3 x the 9 HIDDEN_MODELS hidden, plus the
-# same 13 tasks x k=1 x both Anthropic anchors grader-visible (AC8) - 377
+# under results/: 13 tasks x k=3 x the 10 HIDDEN_MODELS hidden, plus the
+# same 13 tasks x k=1 x both Anthropic anchors grader-visible (AC8) - 416
 # live calls total at today's configuration.
 #
 # Records and completions for one run live together under one
@@ -24,47 +24,42 @@ require "json"
 # .env-loading gate, mirrored here rather than shared, since a test-only
 # convenience has no business becoming a runtime dependency of bin/).
 module EvalSweep
-  # openai/gpt-oss-120b, moonshotai/kimi-k2, meta-llama/llama-3.3-70b-instruct,
-  # qwen/qwen3-coder and deepseek/deepseek-chat verified as exact, live ids
-  # against OpenRouter's GET /models (2026-08-03). mistralai/mistral-large-2411
-  # (the originally-requested id) has rotated off that catalog; substituted
-  # mistralai/mistral-large-2512, the current live successor in the same
-  # dated-release naming scheme (mistral-large-2407 and -2411 are both gone).
+  # I19 follow-up 3 ruling: the earlier target list (qwen3-coder,
+  # deepseek-chat, kimi-k2, llama-3.3-70b, gpt-oss-120b, mistral-large) was
+  # the 2024-2025 generation still sitting on OpenRouter's catalog, not the
+  # current one - this corpus needs to band against current-generation open
+  # models. Every id below verified live against OpenRouter's GET /models
+  # (337 models, 2026-08-03) by exact id match:
+  #   deepseek/deepseek-v4-flash    hf: deepseek-ai/DeepSeek-V4-Flash
+  #   deepseek/deepseek-v4-pro      hf: deepseek-ai/DeepSeek-V4-Pro
+  #   moonshotai/kimi-k3            hf: moonshotai/Kimi-K3
+  #   moonshotai/kimi-k2.7-code     hf: moonshotai/Kimi-K2.7-Code (Fireworks
+  #                                 spells this kimi-k2p7-code)
+  #   qwen/qwen3-coder-plus         current Qwen flagship coder tier (pricier,
+  #                                 larger-context than qwen3-coder-flash/-next)
+  #   qwen/qwen3.7-max              current Qwen flagship general/instruct tier
+  #                                 ("Max" has been Alibaba's top tier since
+  #                                 Turbo/Plus/Max; pricier than qwen3.7-plus)
+  #   z-ai/glm-5.2                  hf: zai-org/GLM-5.2
   #
   # Fireworks probe (Audit D: same weights, second serving stack, so pass@k
   # disagreement bounds serving variance rather than model-generation delta) -
-  # openai/gpt-oss-120b, on both OpenRouter and Fireworks:
-  #   - DeepSeek was ruled out first (see git history): OpenRouter's
-  #     deepseek/deepseek-chat is DeepSeek-V3 (its own metadata); this
-  #     account's Fireworks catalog has only the V4 generation. Not the same
-  #     weights.
-  #   - Kimi K2 was tried next and ALSO ruled out: OpenRouter's
-  #     moonshotai/kimi-k2 is "Kimi K2 0711" (hugging_face_id
-  #     moonshotai/Kimi-K2-Instruct, context_length 131072, text-only
-  #     modality). This account's Fireworks catalog has no plain "kimi-k2" -
-  #     only kimi-k2p6 and kimi-k2p7-code (context_length 262144, image-input
-  #     capable) and kimi-k3 (context_length 1048576) - later generations,
-  #     not the 0711 release OpenRouter serves. Not the same weights.
-  #   - openai/gpt-oss-120b: OpenRouter's canonical_slug AND hugging_face_id
-  #     both equal the id itself ("openai/gpt-oss-120b", no rotation, unlike
-  #     deepseek-chat's canonical_slug pointing elsewhere) - gpt-oss is a
-  #     single fixed OpenAI open-weight release, not a versioned lineage like
-  #     DeepSeek/Kimi. context_length matches exactly on both sides: 131072
-  #     (OpenRouter's own field) == 131072 (this account's Fireworks
-  #     GET /v1/models entry). Best available same-weights evidence on this
-  #     account's catalog - selected as the probe.
-  #   Caveat, disclosed rather than routed around: gpt-oss is a
-  #   reasoning-mandatory family (OpenRouter's own metadata:
-  #   reasoning.mandatory == true; empirically confirmed earlier when
-  #   gpt-oss-20b on Fireworks spent an entire 16-token budget on hidden
-  #   reasoning_content with zero visible output) - this probe may fail the
-  #   sweep lane's preflight on either side. That would be an honest null for
-  #   Audit D, not a reason to swap the model again.
+  # deepseek-v4-flash, on both OpenRouter and Fireworks. Unlike the retired
+  # gpt-oss-120b probe (kept only a context_length match), this pairing has
+  # BOTH context_length (1,048,576 on each side) AND modality (text->text, no
+  # image input, on each side) agreement, plus OpenRouter's own
+  # canonical_slug (deepseek/deepseek-v4-flash-20260423) and hugging_face_id
+  # showing no name rotation - the strongest same-weights evidence found
+  # across any candidate (Kimi K3/K2.7-code and GLM-5.2 also matched on
+  # context_length+modality when checked, but DeepSeek V4 Flash was already
+  # required in this set on OpenRouter, so pairing it needs no additional
+  # model identity and it is the cheapest of the viable candidates).
   HIDDEN_MODELS = [
     "claude-haiku-4-5-20251001", "claude-sonnet-5",
-    "qwen/qwen3-coder", "deepseek/deepseek-chat", "moonshotai/kimi-k2",
-    "meta-llama/llama-3.3-70b-instruct", "openai/gpt-oss-120b", "mistralai/mistral-large-2512",
-    "accounts/fireworks/models/gpt-oss-120b"
+    "deepseek/deepseek-v4-flash", "deepseek/deepseek-v4-pro",
+    "moonshotai/kimi-k3", "moonshotai/kimi-k2.7-code",
+    "qwen/qwen3-coder-plus", "qwen/qwen3.7-max", "z-ai/glm-5.2",
+    "accounts/fireworks/models/deepseek-v4-flash"
   ].freeze
   # Both Anthropic anchors, per AC8 - not just the one this sweep used before.
   VISIBLE_MODELS = ["claude-haiku-4-5-20251001", "claude-sonnet-5"].freeze
@@ -78,13 +73,14 @@ module EvalSweep
   MODEL_PROVIDERS = {
     "claude-haiku-4-5-20251001" => :anthropic,
     "claude-sonnet-5" => :anthropic,
-    "qwen/qwen3-coder" => :openrouter,
-    "deepseek/deepseek-chat" => :openrouter,
-    "moonshotai/kimi-k2" => :openrouter,
-    "meta-llama/llama-3.3-70b-instruct" => :openrouter,
-    "openai/gpt-oss-120b" => :openrouter,
-    "mistralai/mistral-large-2512" => :openrouter,
-    "accounts/fireworks/models/gpt-oss-120b" => :fireworks
+    "deepseek/deepseek-v4-flash" => :openrouter,
+    "deepseek/deepseek-v4-pro" => :openrouter,
+    "moonshotai/kimi-k3" => :openrouter,
+    "moonshotai/kimi-k2.7-code" => :openrouter,
+    "qwen/qwen3-coder-plus" => :openrouter,
+    "qwen/qwen3.7-max" => :openrouter,
+    "z-ai/glm-5.2" => :openrouter,
+    "accounts/fireworks/models/deepseek-v4-flash" => :fireworks
   }.freeze
 
   PROVIDER_BASE_URLS = {
@@ -103,20 +99,64 @@ module EvalSweep
   # standard $3/$15 from 2026-09-01). OpenRouter prices are the exact
   # per-token "prompt"/"completion" figures from its own GET /models response
   # (2026-08-03) - the live source of truth for that endpoint, no unit
-  # conversion needed since it already reports $/token. Fireworks
-  # (gpt-oss-120b) is the Standard-tier rate from
-  # docs.fireworks.ai/serverless/pricing (2026-08-03): $0.15/MTok input,
-  # $0.60/MTok output.
+  # conversion needed since it already reports $/token (base tier; several of
+  # these models have higher tiered rates past 32k/128k prompt tokens that
+  # this table does not model, matching how the base rate was used for every
+  # OpenRouter model in earlier follow-ups). Fireworks (deepseek-v4-flash) is
+  # the Standard-tier rate from docs.fireworks.ai/serverless/pricing
+  # (2026-08-03): $0.14/MTok input, $0.28/MTok output.
   PRICE_TABLE = {
     "claude-haiku-4-5-20251001" => {input_token_price: 1.0 / 1_000_000, output_token_price: 5.0 / 1_000_000},
     "claude-sonnet-5" => {input_token_price: 2.0 / 1_000_000, output_token_price: 10.0 / 1_000_000},
-    "qwen/qwen3-coder" => {input_token_price: 0.0000003, output_token_price: 0.000001},
-    "deepseek/deepseek-chat" => {input_token_price: 0.0000002574, output_token_price: 0.0000010287},
-    "moonshotai/kimi-k2" => {input_token_price: 0.00000057, output_token_price: 0.0000023},
-    "meta-llama/llama-3.3-70b-instruct" => {input_token_price: 0.00000013, output_token_price: 0.0000004},
-    "openai/gpt-oss-120b" => {input_token_price: 0.000000037, output_token_price: 0.00000017},
-    "mistralai/mistral-large-2512" => {input_token_price: 0.0000005, output_token_price: 0.0000015},
-    "accounts/fireworks/models/gpt-oss-120b" => {input_token_price: 0.15 / 1_000_000, output_token_price: 0.60 / 1_000_000}
+    "deepseek/deepseek-v4-flash" => {input_token_price: 0.00000014, output_token_price: 0.00000028},
+    "deepseek/deepseek-v4-pro" => {input_token_price: 0.000000435, output_token_price: 0.00000087},
+    "moonshotai/kimi-k3" => {input_token_price: 0.000003, output_token_price: 0.000015},
+    "moonshotai/kimi-k2.7-code" => {input_token_price: 0.00000073, output_token_price: 0.0000035},
+    "qwen/qwen3-coder-plus" => {input_token_price: 0.00000065, output_token_price: 0.00000325},
+    "qwen/qwen3.7-max" => {input_token_price: 0.000001475, output_token_price: 0.000004425},
+    "z-ai/glm-5.2" => {input_token_price: 0.00000119, output_token_price: 0.00000374},
+    "accounts/fireworks/models/deepseek-v4-flash" => {input_token_price: 0.14 / 1_000_000, output_token_price: 0.28 / 1_000_000}
+  }.freeze
+
+  # Per-model thinking-effort override, merged into the request body via
+  # Providers::OpenAICompat's extra_body_by_model (see that file). The
+  # current-generation open models in HIDDEN_MODELS are reasoning-class
+  # across the board (unlike the earlier target list) - the goal is the
+  # lowest effort that still yields visible text within max_tokens, not
+  # disabling reasoning outright (verified live: this sweep measures coding
+  # capability through a text answer, not reasoning depth).
+  #
+  # OpenRouter's unified mechanism (docs.openrouter.ai/use-cases/reasoning-tokens,
+  # 2026-08-03): {"reasoning": {"effort": "low"}} in the request body;
+  # requesting an effort a model doesn't support maps to that model's own
+  # nearest supported level rather than erroring (confirmed live per-model
+  # supported_efforts: deepseek-v4-flash/pro and glm-5.2 only expose
+  # ["xhigh","high"], so "low" here actually runs at their floor of "high";
+  # kimi-k3 exposes ["max","high","low"], so "low" here is an exact match;
+  # kimi-k2.7-code and qwen3.7-max don't enumerate supported_efforts in their
+  # GET /models entries at all, so "low" here relies on that same
+  # nearest-match behavior). qwen/qwen3-coder-plus is deliberately absent:
+  # its GET /models entry does not list "reasoning" in supported_parameters
+  # at all - it is not a reasoning model and needs no override.
+  #
+  # Fireworks' mechanism is genuinely different per-family (the human's own
+  # warning, confirmed from docs.fireworks.ai/guides/reasoning): a
+  # reasoning_effort request-body string ("low"/"medium"/"high") OR an
+  # Anthropic-compatible thinking: {type:, budget_tokens:} object - never
+  # both, sending both is a validation error. For Harmony-format models
+  # specifically (OpenAI's gpt-oss family, not used here after the probe
+  # swap to deepseek-v4-flash) reasoning_effort is further restricted to
+  # exactly "low"/"medium"/"high" - "none"/false/an integer all error. The
+  # Fireworks probe here (deepseek-v4-flash, not Harmony-format) uses the
+  # plain reasoning_effort string.
+  THINKING_EFFORT = {
+    "deepseek/deepseek-v4-flash" => {reasoning: {effort: "low"}},
+    "deepseek/deepseek-v4-pro" => {reasoning: {effort: "low"}},
+    "moonshotai/kimi-k3" => {reasoning: {effort: "low"}},
+    "moonshotai/kimi-k2.7-code" => {reasoning: {effort: "low"}},
+    "qwen/qwen3.7-max" => {reasoning: {effort: "low"}},
+    "z-ai/glm-5.2" => {reasoning: {effort: "low"}},
+    "accounts/fireworks/models/deepseek-v4-flash" => {reasoning_effort: "low"}
   }.freeze
 
   # Sized well above the worst case, not tight against it. Per-model worst
@@ -125,19 +165,22 @@ module EvalSweep
   # (Providers::Anthropic::DEFAULT_MAX_TOKENS/Providers::OpenAICompat::DEFAULT_MAX_TOKENS)
   # x its output_token_price, ignoring input cost as Anthropic's own
   # original estimate did:
-  #   haiku   52 calls x 4096 x $0.000005  = $1.065
-  #   sonnet  52 calls x 4096 x $0.00001   = $2.130
-  #   qwen3-coder      39 x 4096 x $0.000001    = $0.160
-  #   deepseek-chat    39 x 4096 x $0.0000010287 = $0.164
-  #   kimi-k2          39 x 4096 x $0.0000023   = $0.367
-  #   llama-3.3-70b    39 x 4096 x $0.0000004   = $0.064
-  #   gpt-oss-120b(OR) 39 x 4096 x $0.00000017  = $0.027
-  #   mistral-large    39 x 4096 x $0.0000015   = $0.240
-  #   gpt-oss-120b(FW) 39 x 4096 x $0.0000006   = $0.096
-  # sums to ~$4.31 worst case across the widened 377-call sweep; $15 keeps
-  # over 3x headroom, the same order of margin the original $10 cap held
-  # against its ~$2.73 worst case.
-  SPEND_CAP_DOLLARS = 15.0
+  #   haiku                52 calls x 4096 x $0.000005    = $1.065
+  #   sonnet               52 calls x 4096 x $0.00001     = $2.130
+  #   deepseek-v4-flash(OR) 39 x 4096 x $0.00000028   = $0.045
+  #   deepseek-v4-pro(OR)   39 x 4096 x $0.00000087   = $0.139
+  #   kimi-k3               39 x 4096 x $0.000015     = $2.396
+  #   kimi-k2.7-code        39 x 4096 x $0.0000035    = $0.559
+  #   qwen3-coder-plus      39 x 4096 x $0.00000325   = $0.519
+  #   qwen3.7-max           39 x 4096 x $0.000004425  = $0.707
+  #   glm-5.2               39 x 4096 x $0.00000374   = $0.597
+  #   deepseek-v4-flash(FW) 39 x 4096 x $0.00000028   = $0.045
+  # sums to ~$8.20 worst case across the widened 416-call sweep. The
+  # previous $15 cap would leave only ~1.8x headroom over this - kimi-k3's
+  # much higher output price ($15/MTok) is the driver - so the cap is raised
+  # to $25, restoring >3x headroom (25/8.20 =~ 3.05x), the same order of
+  # margin every prior version of this cap held.
+  SPEND_CAP_DOLLARS = 25.0
 
   RESULTS_DIR = File.expand_path("../results", __dir__)
   LIVE_ENV_FILE = File.expand_path("../.env", __dir__)
@@ -177,12 +220,16 @@ module EvalSweep
     models.map { |model| MODEL_PROVIDERS.fetch(model) }.uniq
   end
 
-  def self.build_provider(kind)
+  def self.build_provider(kind, models)
     case kind
     when :anthropic
       Canary::Providers::Anthropic.new
     when :openrouter, :fireworks
-      Canary::Providers::OpenAICompat.new(base_url: PROVIDER_BASE_URLS.fetch(kind), api_key: ENV.fetch(PROVIDER_ENV_KEYS.fetch(kind)))
+      extra_body_by_model = models.to_h { |model| [model, THINKING_EFFORT.fetch(model, {})] }
+      Canary::Providers::OpenAICompat.new(
+        base_url: PROVIDER_BASE_URLS.fetch(kind), api_key: ENV.fetch(PROVIDER_ENV_KEYS.fetch(kind)),
+        extra_body_by_model: extra_body_by_model
+      )
     else
       raise ArgumentError, "unknown provider kind: #{kind.inspect}"
     end
@@ -216,7 +263,10 @@ module EvalSweep
     # actually use - Budget/SpendGuard/RecordSink are shared across every
     # provider's Sampler instance below since all three are plain mutable
     # counters/appenders with no provider awareness of their own.
-    providers = providers_in_use(hidden_models + visible_models).to_h { |kind| [kind, build_provider(kind)] }
+    all_models = hidden_models + visible_models
+    providers = providers_in_use(all_models).to_h do |kind|
+      [kind, build_provider(kind, all_models.select { |model| MODEL_PROVIDERS.fetch(model) == kind })]
+    end
     record_sink = Canary::Sampler::RecordSink.new(path: completions_path)
     samplers = providers.transform_values { |provider| Canary::Sampler.new(provider: provider, budget: budget, record_sink: record_sink, spend_guard: spend_guard) }
     append_record = ->(record) { File.open(records_path, "a") { |f| f.puts(JSON.generate(record.to_h)) } }

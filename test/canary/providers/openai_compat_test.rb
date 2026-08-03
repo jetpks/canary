@@ -132,6 +132,41 @@ class OpenAICompatTest < Minitest::Test
     assert_equal [{role: "user", content: "hello there"}], sent[:messages]
   end
 
+  def test_extra_body_by_model_is_merged_into_the_request_for_a_matching_model
+    calls = []
+    transport = ->(uri:, headers:, body:) {
+      calls << body
+      fake_response(200, response_for(finish_reason: "stop", content: "hi"))
+    }
+    provider = Canary::Providers::OpenAICompat.new(
+      base_url: BASE_URL, api_key: "sk-test-key", transport: transport,
+      extra_body_by_model: {"reasoning-model" => {reasoning: {effort: "low"}}}
+    )
+
+    provider.sample(model: "reasoning-model", prompt: "p")
+
+    sent = JSON.parse(calls.first, symbolize_names: true)
+    assert_equal({effort: "low"}, sent[:reasoning])
+  end
+
+  def test_extra_body_by_model_is_a_no_op_for_a_model_with_no_entry
+    calls = []
+    transport = ->(uri:, headers:, body:) {
+      calls << body
+      fake_response(200, response_for(finish_reason: "stop", content: "hi"))
+    }
+    provider = Canary::Providers::OpenAICompat.new(
+      base_url: BASE_URL, api_key: "sk-test-key", transport: transport,
+      extra_body_by_model: {"reasoning-model" => {reasoning: {effort: "low"}}}
+    )
+
+    provider.sample(model: "plain-model", prompt: "p")
+
+    sent = JSON.parse(calls.first, symbolize_names: true)
+    refute sent.key?(:reasoning)
+    assert_equal "plain-model", sent[:model]
+  end
+
   def test_a_non_2xx_status_is_a_transport_failure
     transport = ->(uri:, headers:, body:) { fake_response(401, {error: {message: "unauthorized"}}) }
     provider = Canary::Providers::OpenAICompat.new(base_url: BASE_URL, api_key: "bad-key", transport: transport)
