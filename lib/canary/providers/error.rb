@@ -2,8 +2,11 @@ module Canary
   module Providers
     # A typed provider failure. +reason+ is one of :budget_exhausted,
     # :spend_exceeded, :transport_error, :refusal, or :truncated - the
-    # taxonomy Canary::Sampler and its callers switch on; +message+ is a
-    # human-readable detail for the on-disk record.
+    # taxonomy Canary::Sampler and its callers switch on - plus whatever
+    # honestly-named content-failure reasons a given provider adds for
+    # outcomes Anthropic's own API never produces (Providers::OpenAICompat
+    # adds :empty_completion and :unexpected_finish_reason); +message+ is
+    # a human-readable detail for the on-disk record.
     #
     # +raw+ is the provider's full response flattened to a plain Hash, the
     # same shape Sample#raw carries, and is nil for the failures that have

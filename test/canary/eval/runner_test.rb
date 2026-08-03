@@ -126,7 +126,7 @@ class RunnerTest < Minitest::Test
       max_concurrent = concurrent if concurrent > max_concurrent
       Async::Task.current.sleep(0.01)
       concurrent -= 1
-      Dry::Monads::Success(Canary::Providers::Sample.new(text: VALID_CODE_RESPONSE, raw: {stop_reason: :end_turn, usage: {input_tokens: 1, output_tokens: 1}}))
+      Dry::Monads::Success(Canary::Providers::Sample.new(text: VALID_CODE_RESPONSE, raw: {usage: {input_tokens: 1, output_tokens: 1}}, stop_reason: :end_turn))
     end
     runner = Canary::Eval::Runner.new(sampler: build_sampler(fake, max_samples: 10), concurrency: 3)
 
@@ -148,7 +148,7 @@ class RunnerTest < Minitest::Test
     fake = Canary::Providers::Fake.new do |model:, prompt:|
       call_count += 1
       raise "boom on call #{call_count}" if call_count == 3
-      Dry::Monads::Success(Canary::Providers::Sample.new(text: VALID_CODE_RESPONSE, raw: {stop_reason: :end_turn, usage: {input_tokens: 1, output_tokens: 1}}))
+      Dry::Monads::Success(Canary::Providers::Sample.new(text: VALID_CODE_RESPONSE, raw: {usage: {input_tokens: 1, output_tokens: 1}}, stop_reason: :end_turn))
     end
     runner = Canary::Eval::Runner.new(sampler: build_sampler(fake, max_samples: 10), concurrency: 1)
 
@@ -189,7 +189,7 @@ class RunnerTest < Minitest::Test
   private
 
   def success_fake(text)
-    Canary::Providers::Fake.new { |model:, prompt:| Dry::Monads::Success(Canary::Providers::Sample.new(text: text, raw: {stop_reason: :end_turn, usage: {input_tokens: 1, output_tokens: 1}})) }
+    Canary::Providers::Fake.new { |model:, prompt:| Dry::Monads::Success(Canary::Providers::Sample.new(text: text, raw: {usage: {input_tokens: 1, output_tokens: 1}}, stop_reason: :end_turn)) }
   end
 
   def build_sampler(provider, max_samples: 20)

@@ -40,7 +40,7 @@ module Canary
         return content_failure(:refusal, "provider refused: stop_reason=refusal", response) if response.stop_reason == :refusal
         return content_failure(:truncated, "response truncated: stop_reason=max_tokens, max_tokens=#{max_tokens}", response) if response.stop_reason == :max_tokens
 
-        Success(Sample.new(text: extract_text(response), raw: response.deep_to_h))
+        Success(Sample.new(text: extract_text(response), raw: response.deep_to_h, stop_reason: response.stop_reason))
       rescue ::Anthropic::Errors::APIError => e
         Failure(Error.new(reason: :transport_error, message: "#{e.class}: #{e.message}"))
       end

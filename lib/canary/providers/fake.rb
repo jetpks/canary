@@ -15,7 +15,7 @@ module Canary
 
       def initialize(&responder)
         @calls = []
-        @responder = responder || ->(model:, prompt:) { Success(Sample.new(text: "fake response", raw: {model: model, prompt: prompt})) }
+        @responder = responder || ->(model:, prompt:) { Success(Sample.new(text: "fake response", raw: {model: model, prompt: prompt}, stop_reason: :end_turn)) }
       end
 
       def sample(model:, prompt:)
