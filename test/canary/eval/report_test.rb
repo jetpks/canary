@@ -63,6 +63,23 @@ class ReportTest < Minitest::Test
     assert_in_delta 1.0, report.pass_at_k(2), 1e-9
   end
 
+  # I15 F3: pass_at_k's filter_map correctly drops under-sampled tasks from
+  # the average, but that leaves the denominator invisible - tasks_counted
+  # is that denominator, reported the same way non_score_count sits beside
+  # every rate.
+  def test_tasks_counted_reports_the_pass_at_k_denominator
+    records = [
+      record(task: "a", scored: true, passed: true),
+      record(task: "a", scored: true, passed: false),
+      record(task: "a", scored: true, passed: true),
+      record(task: "b", scored: true, passed: true),
+    ]
+    report = Canary::Eval::Report.new(records)
+
+    assert_equal 1, report.tasks_counted(3)
+    assert_equal 2, report.tasks_counted(1)
+  end
+
   private
 
   def record(task:, scored:, passed: nil, reason: nil)
