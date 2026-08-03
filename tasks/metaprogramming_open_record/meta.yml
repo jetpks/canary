@@ -1,5 +1,6 @@
 category: metaprogramming
 adapter: minitest
+provenance: authored
 statement: "Implement OpenRecord.new(**attrs), a dynamic attribute store: each keyword given at construction is readable via a matching getter method, and calling any assignment-style method (e.g. record.age = 37) sets that attribute so it becomes newly readable too - even for an attribute never given at construction. record.respond_to?(:name) and record.respond_to?(:name=) must return true for every attribute name that actually works this way. Calling a getter for a name that was never set raises NoMethodError, exactly as it would for any object with no such method."
 broken:
   - id: missing_respond_to_missing

@@ -1,5 +1,6 @@
 category: "Comparable gives == via <=>, but Hash keys, uniq, and Array#- need eql?/hash too"
 adapter: rspec
+provenance: authored
 statement: "Implement Point(x, y). Point instances order by distance from the origin - e.g. Point.new(5, 0) is less than Point.new(1, 10) - and support sort accordingly. Two points with the same x and y must be treated as fully equal: they collapse to a single entry under Array#uniq, and using either as a Hash key reaches the same stored value as using the other."
 broken:
   - id: missing_eql_and_hash

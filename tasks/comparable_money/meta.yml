@@ -1,5 +1,6 @@
 category: the Comparable protocol and <=> contracts
 adapter: rspec
+provenance: authored
 statement: "Implement Money(cents:), including Comparable, so instances order strictly by the numeric magnitude of cents - Money.new(9) is less than Money.new(10) - and support ==, sort, and clamp accordingly."
 broken:
   - id: lexical_string_compare

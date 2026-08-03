@@ -1,5 +1,6 @@
 category: "an ensure block with an explicit return silently swallows the in-flight exception"
 adapter: minitest
+provenance: authored
 statement: Implement TransactionRunner.run(log, &block). It always appends :cleaned_up to log exactly once - whether the block returns normally or raises - and any exception the block raises still propagates out of .run to the caller unchanged; a successful block's return value is returned by .run.
 broken:
   - id: ensure_returns_and_swallows

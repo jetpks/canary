@@ -1,5 +1,6 @@
 category: exception hierarchies, ensure ordering, retry, custom error classes
 adapter: minitest
+provenance: authored
 statement: "Implement Retrier.call(max_attempts:) { |attempt_number| ... }. It calls the block, retrying up to max_attempts total attempts whenever the block raises TransientError, and returns the block's value on a successful attempt. A PermanentError always propagates to the caller immediately, without any retry. If every attempt through max_attempts raises TransientError, the error from the final attempt propagates to the caller instead of being retried again."
 broken:
   - id: rescues_standard_error
