@@ -42,6 +42,36 @@ class RunnerTest < Minitest::Test
     end
   end
 
+  # AC6: a k>1 run's completions on disk (written by Sampler's own
+  # RecordSink, no Fiber hop involved) must be joinable 1:1 to the Records
+  # Runner returns for the same run - proving Sampler#call's base_index
+  # (sampler.rb) carries job.index all the way to what lands on disk.
+  def test_a_k3_run_produces_completions_joinable_1to1_to_records_by_sample_index
+    completions_path = Tempfile.new(%w[runner_join_completions .jsonl]).path
+    sampler = Canary::Sampler.new(
+      provider: success_fake(VALID_CODE_RESPONSE),
+      budget: Canary::Sampler::Budget.new(max_samples: 20),
+      record_sink: Canary::Sampler::RecordSink.new(path: completions_path)
+    )
+    runner = Canary::Eval::Runner.new(sampler: sampler)
+
+    records = runner.call(entries: [build_entry], models: ["fixture-model"], k: 3, grader: false)
+    completions = File.readlines(completions_path).map { |line| JSON.parse(line) }
+
+    assert_equal 3, completions.size
+    joined = records.map do |record|
+      completions.find do |completion|
+        completion["task_name"] == record.task_name &&
+          completion["model"] == record.model &&
+          completion["mode"] == record.render_mode.to_s &&
+          completion["sample_index"] == record.sample_index
+      end
+    end
+
+    refute_includes joined, nil
+    assert_equal records.map(&:sample_index).sort, completions.map { |c| c["sample_index"] }.sort
+  end
+
   def test_grader_true_produces_grader_visible_records
     sampler = build_sampler(success_fake(VALID_CODE_RESPONSE))
     runner = Canary::Eval::Runner.new(sampler: sampler)

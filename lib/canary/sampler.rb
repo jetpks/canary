@@ -86,11 +86,15 @@ module Canary
 
     # Renders +entry+ once (hidden by default, grader-visible when
     # +grader+ is true) and asks the provider for +n+ completions,
-    # returning one Dry::Monads::Result per completion in order.
-    def call(entry, model:, n: 1, grader: false)
+    # returning one Dry::Monads::Result per completion in order. Each
+    # completion's recorded sample_index is +base_index+ plus its position
+    # in this call, so a caller issuing several n: 1 calls for the same
+    # (task, model) can keep indices contiguous by passing successive
+    # +base_index+ values instead of every call recording 0.
+    def call(entry, model:, n: 1, base_index: 0, grader: false)
       rendered = Prompt.render(entry, grader: grader)
 
-      Array.new(n) { |index| sample_one(entry.name, rendered, model, index) }
+      Array.new(n) { |index| sample_one(entry.name, rendered, model, base_index + index) }
     end
 
     private

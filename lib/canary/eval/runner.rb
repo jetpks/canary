@@ -10,9 +10,9 @@ module Canary
     # -> verify via Canary::Verifier -> one record.
     #
     # Fans the jobs out under a bounded Async::Semaphore (BRIEF §4.1: fibers,
-    # never threads) rather than Sampler's own sequential Array.new(n) -
-    # Sampler is frozen for this iteration, so the concurrency lives here,
-    # one job (task, model, sample_index) at a time.
+    # never threads), one job (task, model, sample_index) at a time -
+    # Sampler#call itself stays a sequential Array.new(n), so the
+    # concurrency across samples lives here, not there.
     class Runner
       SCHEMA_VERSION = 1
 
@@ -60,12 +60,8 @@ module Canary
 
       private
 
-      # Fiber[CompletionSink::SAMPLE_INDEX] hands this job's index to
-      # Sampler's record_sink across a frozen method signature - see
-      # CompletionSink for why Sampler's own index can't be trusted here.
       def run_one(job)
-        Fiber[CompletionSink::SAMPLE_INDEX] = job.index
-        result = @sampler.call(job.entry, model: job.model, n: 1, grader: job.grader).first
+        result = @sampler.call(job.entry, model: job.model, n: 1, base_index: job.index, grader: job.grader).first
 
         return provider_failure_record(job, result.failure) if result.failure?
 
@@ -75,8 +71,6 @@ module Canary
         return extractor_refusal_record(job, sample, extracted) unless extracted.outcome == :ok
 
         verified_record(job, sample, extracted)
-      ensure
-        Fiber[CompletionSink::SAMPLE_INDEX] = nil
       end
 
       # A provider Failure never reached the extractor or the verifier - the
