@@ -52,11 +52,19 @@ module Canary
       # what once made a truncated answer unrecoverable from the record
       # even though its fenced code block was complete (I14 F1).
       def content_failure(reason, message, response)
-        Failure(Error.new(reason: reason, message: message, raw: response.deep_to_h))
+        Failure(Error.new(reason: reason, message: message, raw: response.deep_to_h, text: visible_text(response)))
       end
 
       def extract_text(response)
         response.content.select { |block| block.type == :text }.map(&:text).join
+      end
+
+      # nil rather than "" when the response's text blocks carried nothing -
+      # Error#text's contract is nil-means-no-recoverable-text, not merely
+      # absent-caller-supplied-text.
+      def visible_text(response)
+        text = extract_text(response)
+        text unless text.empty?
       end
     end
   end

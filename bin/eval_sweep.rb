@@ -160,27 +160,28 @@ module EvalSweep
   }.freeze
 
   # Sized well above the worst case, not tight against it. Per-model worst
-  # case = that model's total call count (hidden 13 tasks x k=3, plus 13 x
+  # case = that model's total call count (hidden 18 tasks x k=3, plus 18 x
   # k=1 for the two now-visible anchors) x max_tokens=4096
   # (Providers::Anthropic::DEFAULT_MAX_TOKENS/Providers::OpenAICompat::DEFAULT_MAX_TOKENS)
   # x its output_token_price, ignoring input cost as Anthropic's own
-  # original estimate did:
-  #   haiku                52 calls x 4096 x $0.000005    = $1.065
-  #   sonnet               52 calls x 4096 x $0.00001     = $2.130
-  #   deepseek-v4-flash(OR) 39 x 4096 x $0.00000028   = $0.045
-  #   deepseek-v4-pro(OR)   39 x 4096 x $0.00000087   = $0.139
-  #   kimi-k3               39 x 4096 x $0.000015     = $2.396
-  #   kimi-k2.7-code        39 x 4096 x $0.0000035    = $0.559
-  #   qwen3-coder-plus      39 x 4096 x $0.00000325   = $0.519
-  #   qwen3.7-max           39 x 4096 x $0.000004425  = $0.707
-  #   glm-5.2               39 x 4096 x $0.00000374   = $0.597
-  #   deepseek-v4-flash(FW) 39 x 4096 x $0.00000028   = $0.045
-  # sums to ~$8.20 worst case across the widened 416-call sweep. The
-  # previous $15 cap would leave only ~1.8x headroom over this - kimi-k3's
-  # much higher output price ($15/MTok) is the driver - so the cap is raised
-  # to $25, restoring >3x headroom (25/8.20 =~ 3.05x), the same order of
-  # margin every prior version of this cap held.
-  SPEND_CAP_DOLLARS = 25.0
+  # original estimate did. I20 widens the corpus from 13 to 18 tasks (a
+  # parallel lane), which raises the same per-model call counts from 39/52
+  # to 54/72:
+  #   haiku                72 calls x 4096 x $0.000005    = $1.475
+  #   sonnet               72 calls x 4096 x $0.00001     = $2.949
+  #   deepseek-v4-flash(OR) 54 x 4096 x $0.00000028   = $0.062
+  #   deepseek-v4-pro(OR)   54 x 4096 x $0.00000087   = $0.192
+  #   kimi-k3               54 x 4096 x $0.000015     = $3.318
+  #   kimi-k2.7-code        54 x 4096 x $0.0000035    = $0.774
+  #   qwen3-coder-plus      54 x 4096 x $0.00000325   = $0.719
+  #   qwen3.7-max           54 x 4096 x $0.000004425  = $0.979
+  #   glm-5.2               54 x 4096 x $0.00000374   = $0.827
+  #   deepseek-v4-flash(FW) 54 x 4096 x $0.00000028   = $0.062
+  # sums to ~$11.357 worst case across the widened 576-call sweep. The
+  # previous $25 cap would leave only ~2.2x headroom over this - so the cap
+  # is raised to $35, restoring >3x headroom (35/11.357 =~ 3.08x), the same
+  # order of margin every prior version of this cap held.
+  SPEND_CAP_DOLLARS = 35.0
 
   RESULTS_DIR = File.expand_path("../results", __dir__)
   LIVE_ENV_FILE = File.expand_path("../.env", __dir__)

@@ -63,9 +63,9 @@ module Canary
       def run_one(job)
         result = @sampler.call(job.entry, model: job.model, n: 1, base_index: job.index, grader: job.grader).first
 
-        return provider_failure_record(job, result.failure) if result.failure?
+        return provider_failure_record(job, result.failure) if result.failure? && !result.failure.text
 
-        sample = result.success
+        sample = result.success? ? result.success : sample_from_failure(result.failure)
         extracted = Extractor.call(sample.text)
 
         return extractor_refusal_record(job, sample, extracted) unless extracted.outcome == :ok
@@ -73,11 +73,14 @@ module Canary
         verified_record(job, sample, extracted)
       end
 
-      # A provider Failure never reached the extractor or the verifier - the
-      # reasons here (:refusal, :truncated from the content outcomes;
-      # :transport_error, :budget_exhausted, :spend_exceeded from the guards
-      # Sampler checks pre-flight) are all "the pipeline never produced
-      # gradable code," the same class of non-score R3 names explicitly.
+      # A text-less provider Failure never reached the extractor or the
+      # verifier - the reasons here (:refusal, :truncated from the content
+      # outcomes with no recoverable text; :transport_error,
+      # :budget_exhausted, :spend_exceeded from the guards Sampler checks
+      # pre-flight) are all "the pipeline never produced gradable code," the
+      # same class of non-score R3 names explicitly. A Failure whose
+      # error.text IS present skips this and goes through sample_from_failure
+      # instead - see run_one.
       def provider_failure_record(job, error)
         Record.new(**identity_fields(job),
           scored: false,
@@ -86,6 +89,20 @@ module Canary
           stop_reason: error.raw&.dig(:stop_reason),
           input_tokens: error.raw&.dig(:usage, :input_tokens),
           output_tokens: error.raw&.dig(:usage, :output_tokens))
+      end
+
+      # Wraps a text-carrying Failure's error in the same shape a Success
+      # hands the rest of run_one, so a truncated-or-refused-but-still-
+      # readable response gets the identical extract -> prefilter -> grade
+      # path a Success takes (AC7) rather than a second, parallel one.
+      # stop_reason is read off raw the same honest way
+      # provider_failure_record already does above - never :end_turn/:stop,
+      # so the truncation or refusal stays visible on a record this yields
+      # even when that record ends up scored: true. The provider's own
+      # monad arm never changes: this only reshapes data already returned
+      # as a Failure, it never becomes a Success.
+      def sample_from_failure(error)
+        Providers::Sample.new(text: error.text, raw: error.raw, stop_reason: error.raw&.dig(:stop_reason))
       end
 
       # The model answered, but the extractor found nothing gradable - no

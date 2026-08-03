@@ -52,9 +52,51 @@ class CorpusInvariantsTest < Minitest::Test
     end
   end
 
+  # I20 F1: a length-truncated provider response whose content still held a
+  # complete, syntactically valid Ruby fence was recorded as a non-score
+  # (Canary::Eval::Runner#provider_failure_record short-circuited before the
+  # extractor for EVERY provider Failure, text or no text) and never
+  # graded. This is the corpus-wide guard for that gap, run through the
+  # public Canary::Eval::Runner path: every reference solution, fed back as
+  # a provider Failure's visible text (reason: :truncated, same as a real
+  # max_tokens cutoff) rather than as a Success, must still reach the
+  # grader and pass - exactly as it already does through a genuine Success
+  # (see the first invariant above). Reverting Runner#run_one's
+  # text-carrying-Failure path fails this loudly, over the whole dynamic
+  # corpus, not just one fixture.
+  def test_every_reference_solution_reaches_the_grader_through_a_truncated_provider_failure
+    Canary::TaskRepo.all.each do |entry|
+      fenced_response = "```ruby\n#{File.read(entry.reference.solution_path)}\n```"
+      runner = Canary::Eval::Runner.new(sampler: truncated_failure_sampler(fenced_response))
+
+      record = runner.call(entries: [entry], models: ["probe-model"], k: 1, grader: false).first
+
+      assert record.scored?, "#{entry.name}: expected a truncated-with-content provider failure to reach the grader, " \
+        "got non_score_reason=#{record.non_score_reason.inspect}"
+      assert record.passed, "#{entry.name}: expected the reference solution to pass through the truncated-failure path"
+      assert_equal :max_tokens, record.stop_reason, "#{entry.name}: expected the truncation to stay visible on a scored record"
+    end
+  end
+
   private
 
   def warning_variant_task(entry, solution_path)
     Canary::Task.new(solution_path: solution_path, test_path: entry.reference.test_path, adapter: entry.reference.adapter)
+  end
+
+  def truncated_failure_sampler(text)
+    fake = Canary::Providers::Fake.new do |model:, prompt:|
+      Dry::Monads::Failure(Canary::Providers::Error.new(
+        reason: :truncated, message: "response truncated: stop_reason=max_tokens, max_tokens=4096",
+        raw: {stop_reason: :max_tokens, usage: {input_tokens: 1, output_tokens: 1}},
+        text: text
+      ))
+    end
+
+    Canary::Sampler.new(
+      provider: fake,
+      budget: Canary::Sampler::Budget.new(max_samples: 1),
+      record_sink: Canary::Sampler::RecordSink.new(path: Tempfile.new(%w[canary_invariant_completions .jsonl]).path)
+    )
   end
 end
