@@ -52,7 +52,7 @@ class CorpusInvariantsTest < Minitest::Test
     end
   end
 
-  # I20 F1: a length-truncated provider response whose content still held a
+  # I19 F1/AC9: a length-truncated provider response whose content still held a
   # complete, syntactically valid Ruby fence was recorded as a non-score
   # (Canary::Eval::Runner#provider_failure_record short-circuited before the
   # extractor for EVERY provider Failure, text or no text) and never

@@ -6,7 +6,7 @@ module Canary
   # be rejected for free never pays for a fork. Binary pass/fail only - no
   # weighting, no partial credit, no numeric reward.
   class Verifier
-    Result = Struct.new(:prefilter_report, :rollout_result, :passed, keyword_init: true)
+    Result = Data.define(:prefilter_report, :rollout_result, :passed)
 
     def initialize(pool: Pool.new)
       @pool = pool

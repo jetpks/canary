@@ -26,6 +26,10 @@ module Canary
     # failure whose response genuinely had nothing to show; non-nil for a
     # truncation or refusal whose response held recoverable prose - each
     # provider populates it from its own response shape.
-    Error = Struct.new(:reason, :message, :raw, :text, keyword_init: true)
+    Error = Data.define(:reason, :message, :raw, :text) do
+      def initialize(raw: nil, text: nil, **rest)
+        super(raw: raw, text: text, **rest)
+      end
+    end
   end
 end

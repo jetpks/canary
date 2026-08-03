@@ -36,7 +36,7 @@ module Canary
     # is Prefilter's own verdict, computed from severity, not from which
     # tool emitted the finding: tier 0 gates only on parse.errors, never
     # parse.warnings; tier 1 gates only at GATING_SEVERITIES.
-    Finding = Struct.new(:tier, :severity, :type, :message, :location, :gating, keyword_init: true) do
+    Finding = Data.define(:tier, :severity, :type, :message, :location, :gating) do
       def gating?
         gating
       end
@@ -45,7 +45,7 @@ module Canary
     # +truncated+ is true only when the submission failed to parse because
     # it ends mid-construct - a generation cut short, not one that is
     # structurally broken partway through.
-    Report = Struct.new(:syntax_valid, :truncated, :findings, keyword_init: true) do
+    Report = Data.define(:syntax_valid, :truncated, :findings) do
       # A diagnostic's severity decides whether it gates, never the tool
       # that emitted it (I16 F1: folding parse.warnings in with
       # parse.errors here hard-rejected submissions Prism itself parsed

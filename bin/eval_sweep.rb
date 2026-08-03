@@ -4,11 +4,12 @@ require_relative "../lib/canary"
 require "fileutils"
 require "json"
 
-# Runs the I19-widened sweep shape and commits the resulting
-# Canary::Eval::Record set, and the raw completions that produced them,
-# under results/: 13 tasks x k=3 x the 10 HIDDEN_MODELS hidden, plus the
-# same 13 tasks x k=1 x both Anthropic anchors grader-visible (AC8) - 416
-# live calls total at today's configuration.
+# Runs the sweep shape and commits the resulting Canary::Eval::Record set,
+# and the raw completions that produced them, under results/: every task in
+# Canary::TaskRepo.all x k=HIDDEN_K x HIDDEN_MODELS.size hidden, plus the
+# same task count x k=VISIBLE_K x VISIBLE_MODELS.size grader-visible (AC8) -
+# total live calls tracks the corpus and configured model set, not a fixed
+# number that rots as either changes (see .run's total_calls).
 #
 # Records and completions for one run live together under one
 # results/run-<timestamp>/ directory, and a later run lands in its own
@@ -159,29 +160,17 @@ module EvalSweep
     "accounts/fireworks/models/deepseek-v4-flash" => {reasoning_effort: "low"}
   }.freeze
 
-  # Sized well above the worst case, not tight against it. Per-model worst
-  # case = that model's total call count (hidden 18 tasks x k=3, plus 18 x
-  # k=1 for the two now-visible anchors) x max_tokens=4096
-  # (Providers::Anthropic::DEFAULT_MAX_TOKENS/Providers::OpenAICompat::DEFAULT_MAX_TOKENS)
-  # x its output_token_price, ignoring input cost as Anthropic's own
-  # original estimate did. I20 widens the corpus from 13 to 18 tasks (a
-  # parallel lane), which raises the same per-model call counts from 39/52
-  # to 54/72:
-  #   haiku                72 calls x 4096 x $0.000005    = $1.475
-  #   sonnet               72 calls x 4096 x $0.00001     = $2.949
-  #   deepseek-v4-flash(OR) 54 x 4096 x $0.00000028   = $0.062
-  #   deepseek-v4-pro(OR)   54 x 4096 x $0.00000087   = $0.192
-  #   kimi-k3               54 x 4096 x $0.000015     = $3.318
-  #   kimi-k2.7-code        54 x 4096 x $0.0000035    = $0.774
-  #   qwen3-coder-plus      54 x 4096 x $0.00000325   = $0.719
-  #   qwen3.7-max           54 x 4096 x $0.000004425  = $0.979
-  #   glm-5.2               54 x 4096 x $0.00000374   = $0.827
-  #   deepseek-v4-flash(FW) 54 x 4096 x $0.00000028   = $0.062
-  # sums to ~$11.357 worst case across the widened 576-call sweep. The
-  # previous $25 cap would leave only ~2.2x headroom over this - so the cap
-  # is raised to $35, restoring >3x headroom (35/11.357 =~ 3.08x), the same
-  # order of margin every prior version of this cap held.
-  SPEND_CAP_DOLLARS = 35.0
+  # The eval's own token budget, passed explicitly to every provider
+  # .build_provider constructs below - the library defaults
+  # (Providers::Anthropic::DEFAULT_MAX_TOKENS,
+  # Providers::OpenAICompat::DEFAULT_MAX_TOKENS) stay 4096, since a sweep-
+  # wide budget belongs in the sweep's own config, not in a default every
+  # other caller inherits. Raised from 4096: I20 measured 20 of 54
+  # kimi-k2.7-code hidden records truncated at the 4096 cap with zero
+  # visible text - reasoning burn eating the whole budget before any answer
+  # appeared. 16_384 is the smallest power-of-two step (4x) that turns that
+  # observed burn into headroom.
+  SWEEP_MAX_TOKENS = 16_384
 
   RESULTS_DIR = File.expand_path("../results", __dir__)
   LIVE_ENV_FILE = File.expand_path("../.env", __dir__)
@@ -224,12 +213,12 @@ module EvalSweep
   def self.build_provider(kind, models)
     case kind
     when :anthropic
-      Canary::Providers::Anthropic.new
+      Canary::Providers::Anthropic.new(max_tokens: SWEEP_MAX_TOKENS)
     when :openrouter, :fireworks
       extra_body_by_model = models.to_h { |model| [model, THINKING_EFFORT.fetch(model, {})] }
       Canary::Providers::OpenAICompat.new(
         base_url: PROVIDER_BASE_URLS.fetch(kind), api_key: ENV.fetch(PROVIDER_ENV_KEYS.fetch(kind)),
-        extra_body_by_model: extra_body_by_model
+        max_tokens: SWEEP_MAX_TOKENS, extra_body_by_model: extra_body_by_model
       )
     else
       raise ArgumentError, "unknown provider kind: #{kind.inspect}"
@@ -240,6 +229,36 @@ module EvalSweep
   # overwrites - see the module comment.
   def self.new_run_dir
     File.join(RESULTS_DIR, Time.now.utc.strftime("run-%Y%m%dT%H%M%SZ"))
+  end
+
+  # Replaces a hand-maintained SPEND_CAP_DOLLARS constant with a derivation
+  # run fresh at every startup (Standing rule 5: the number carries its
+  # source, printed line by line by .run below, rather than living in a
+  # comment that has to be re-derived by hand every time the corpus, model
+  # set, or token budget changes). Worst case, per HIDDEN_MODELS/
+  # VISIBLE_MODELS as configured (not narrowed by any runtime
+  # CANARY_SWEEP_SKIP - a worst case assumes nothing gets skipped): each
+  # model's total call count (tasks_count x HIDDEN_K if it's in the hidden
+  # arm, plus tasks_count x VISIBLE_K if it's in the visible arm) x
+  # max_tokens x that model's PRICE_TABLE output price, input cost ignored
+  # as every prior derivation of this cap did. The cap is 3x that sum,
+  # rounded up to the dollar - the same order of headroom every prior
+  # version of this cap held.
+  def self.spend_cap_derivation(tasks_count:, hidden_models: HIDDEN_MODELS, visible_models: VISIBLE_MODELS, price_table: PRICE_TABLE, max_tokens: SWEEP_MAX_TOKENS)
+    lines = []
+    worst_case = (hidden_models + visible_models).uniq.sum do |model|
+      calls = (hidden_models.include?(model) ? tasks_count * HIDDEN_K : 0) +
+              (visible_models.include?(model) ? tasks_count * VISIBLE_K : 0)
+      rate = price_table.fetch(model).fetch(:output_token_price)
+      cost = calls * max_tokens * rate
+      lines << format("  %-45s %4d calls x %d x $%.8f = $%.4f", model, calls, max_tokens, rate, cost)
+      cost
+    end
+
+    cap = (worst_case * 3).ceil
+    lines << format("  worst case sum: $%.4f", worst_case)
+    lines << format("  cap (3x worst case, rounded up): $%d", cap)
+    [cap, lines]
   end
 
   def self.run
@@ -253,7 +272,11 @@ module EvalSweep
     tasks = Canary::TaskRepo.all
     total_calls = (tasks.size * HIDDEN_K * hidden_models.size) + (tasks.size * VISIBLE_K * visible_models.size)
     budget = Canary::Sampler::Budget.new(max_samples: total_calls)
-    spend_guard = Canary::Sampler::SpendGuard.new(max_dollars: SPEND_CAP_DOLLARS, price_table: PRICE_TABLE)
+
+    cap, cap_lines = spend_cap_derivation(tasks_count: tasks.size)
+    puts "spend guard cap derivation:"
+    cap_lines.each { |line| puts line }
+    spend_guard = Canary::Sampler::SpendGuard.new(max_dollars: cap, price_table: PRICE_TABLE)
 
     run_dir = new_run_dir
     FileUtils.mkdir_p(run_dir)
@@ -272,7 +295,7 @@ module EvalSweep
     samplers = providers.transform_values { |provider| Canary::Sampler.new(provider: provider, budget: budget, record_sink: record_sink, spend_guard: spend_guard) }
     append_record = ->(record) { File.open(records_path, "a") { |f| f.puts(JSON.generate(record.to_h)) } }
 
-    puts "spend guard cap: $#{SPEND_CAP_DOLLARS}"
+    puts "spend guard cap: $#{cap}"
     puts "budget cap: #{total_calls} samples"
     puts "hidden arm: #{tasks.size} tasks x k=#{HIDDEN_K} x #{hidden_models.join(', ')}"
     hidden = run_arm(samplers: samplers, tasks: tasks, models: hidden_models, k: HIDDEN_K, grader: false, &append_record)

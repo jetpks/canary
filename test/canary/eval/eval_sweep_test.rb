@@ -46,4 +46,55 @@ class EvalSweepTest < Minitest::Test
   ensure
     ENV.delete("CANARY_SWEEP_SKIP")
   end
+
+  # AC10: 3x the worst-case spend if every configured call maxed out
+  # max_tokens, against a fixed model set/task count/price table so the
+  # expected number is hand-computable rather than re-deriving the
+  # production config's own real numbers here.
+  def test_spend_cap_derivation_is_3x_the_worst_case_output_spend_rounded_up
+    price_table = {
+      "hidden-and-visible" => {input_token_price: 0, output_token_price: 0.00001},
+      "hidden-only" => {input_token_price: 0, output_token_price: 0.00002}
+    }
+
+    cap, lines = EvalSweep.spend_cap_derivation(
+      tasks_count: 10,
+      hidden_models: ["hidden-and-visible", "hidden-only"],
+      visible_models: ["hidden-and-visible"],
+      price_table: price_table,
+      max_tokens: 100
+    )
+
+    # hidden-and-visible: (10 tasks x HIDDEN_K hidden) + (10 tasks x VISIBLE_K visible) calls
+    # hidden-only:        (10 tasks x HIDDEN_K hidden) calls, no visible-arm membership
+    hidden_and_visible_calls = (10 * EvalSweep::HIDDEN_K) + (10 * EvalSweep::VISIBLE_K)
+    hidden_only_calls = 10 * EvalSweep::HIDDEN_K
+    worst_case = (hidden_and_visible_calls * 100 * 0.00001) + (hidden_only_calls * 100 * 0.00002)
+    expected_cap = (worst_case * 3).ceil
+
+    assert_equal expected_cap, cap
+    assert_equal 4, lines.size
+    assert_match(/hidden-and-visible.*#{hidden_and_visible_calls} calls/, lines[0])
+    assert_match(/hidden-only.*#{hidden_only_calls} calls/, lines[1])
+    assert_match(/worst case sum/, lines[2])
+    assert_match(/cap.*\$#{expected_cap}/, lines[3])
+  end
+
+  def test_spend_cap_derivation_excludes_a_model_configured_in_neither_arm_it_was_asked_about
+    price_table = {"unused-model" => {input_token_price: 0, output_token_price: 0.00001}}
+
+    cap, lines = EvalSweep.spend_cap_derivation(
+      tasks_count: 10, hidden_models: [], visible_models: [], price_table: price_table, max_tokens: 100
+    )
+
+    assert_equal 0, cap
+    assert_equal ["  worst case sum: $0.0000", "  cap (3x worst case, rounded up): $0"], lines
+  end
+
+  def test_spend_cap_derivation_defaults_to_the_real_configured_models_and_price_table
+    cap, lines = EvalSweep.spend_cap_derivation(tasks_count: 1)
+
+    assert_operator cap, :>, 0
+    assert_equal (EvalSweep::HIDDEN_MODELS + EvalSweep::VISIBLE_MODELS).uniq.size + 2, lines.size
+  end
 end

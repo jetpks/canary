@@ -1,4 +1,5 @@
 require "net/http"
+require "openssl"
 require "json"
 require "dry/monads"
 require_relative "sample"
@@ -59,10 +60,10 @@ module Canary
         headers = {"Authorization" => "Bearer #{@api_key}", "Content-Type" => "application/json"}
         response = @transport.call(uri: @uri, headers: headers, body: body)
 
-        return Failure(Error.new(reason: :transport_error, message: "HTTP #{response.code}")) unless success_status?(response)
+        return Failure(Error.new(reason: :transport_error, message: "HTTP #{response.code}", raw: error_raw(response))) unless success_status?(response)
 
         handle_body(JSON.parse(response.body, symbolize_names: true), max_tokens)
-      rescue => e
+      rescue SocketError, SystemCallError, Net::OpenTimeout, Net::ReadTimeout, OpenSSL::SSL::SSLError, IOError, JSON::ParserError => e
         Failure(Error.new(reason: :transport_error, message: "#{e.class}: #{e.message}"))
       end
 
@@ -70,6 +71,17 @@ module Canary
 
       def success_status?(response)
         response.code.to_i.between?(200, 299)
+      end
+
+      # A non-2xx body carries the provider's own diagnosis of what went
+      # wrong (e.g. the Qwen privacy-404 body I19 F4 had to re-buy evidence
+      # for after this went uncaptured once already) - preserved as parsed
+      # JSON when the body is JSON, or wrapped verbatim when it isn't, same
+      # as every other Error#raw on this boundary: never dropped.
+      def error_raw(response)
+        JSON.parse(response.body, symbolize_names: true)
+      rescue JSON::ParserError
+        {body: response.body}
       end
 
       def handle_body(body, max_tokens)

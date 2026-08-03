@@ -9,13 +9,11 @@ module Canary
   # all), :timeout (the parent gave up waiting and killed the child), or
   # :invalid (the child reported, but the grader files it ran under were
   # modified during the rollout - not scored, regardless of what it said).
-  RolloutResult = Struct.new(
-    :adapter, :examples, :passed, :failed, :total, :coverage, :error, :outcome,
-    keyword_init: true
+  RolloutResult = Data.define(
+    :adapter, :examples, :passed, :failed, :total, :coverage, :error, :outcome
   ) do
-    def initialize(*)
-      super
-      self.outcome ||= :ok
+    def initialize(coverage: nil, error: nil, outcome: :ok, **rest)
+      super(coverage: coverage, error: error, outcome: outcome, **rest)
     end
 
     # total.positive? matters as much as failed.zero?: a suite that ran zero
@@ -47,5 +45,5 @@ module Canary
   end
 
   # A single test/example outcome, framework-agnostic.
-  ExampleResult = Struct.new(:name, :status, :message, keyword_init: true)
+  ExampleResult = Data.define(:name, :status, :message)
 end

@@ -60,11 +60,11 @@ class PromptTest < Minitest::Test
     text = Canary::Prompt.render(entry).text
     checked_members = Canary::TaskRepo::Entry.members - [:statement]
 
-    nil_members = checked_members.select { |member| entry[member].nil? }
+    nil_members = checked_members.select { |member| entry.public_send(member).nil? }
     assert_empty nil_members, "sentinel entry must supply a non-nil sentinel for every member so the leak check below isn't vacuous; nil for #{nil_members.inspect}"
 
     checked_members.each do |member|
-      refute_includes text, entry[member].to_s, "Entry##{member} leaked into the hidden-mode prompt"
+      refute_includes text, entry.public_send(member).to_s, "Entry##{member} leaked into the hidden-mode prompt"
     end
   end
 
