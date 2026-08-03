@@ -19,7 +19,7 @@ Gem::Specification.new do |spec|
   # gem-relative (../../tasks from lib/canary/task_repo.rb), so the corpus
   # must ship for TaskRepo.all's default root to resolve in an installed gem
   # instead of dangling the way .rubocop.yml once did (I07 D2).
-  spec.files         = Dir["lib/**/*.rb"] + [".rubocop.yml"] + Dir["tasks/**/*"].select { |f| File.file?(f) }
+  spec.files         = Dir["lib/**/*.rb"] + ["LICENSE", "README.md", ".rubocop.yml"] + Dir["tasks/**/*"].select { |f| File.file?(f) }
   spec.require_paths = ["lib"]
 
   spec.add_dependency "anthropic", "~> 1.59"
