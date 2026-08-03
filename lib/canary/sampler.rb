@@ -32,6 +32,32 @@ module Canary
       end
     end
 
+    # Accumulates real dollar spend from each dispatched response's +usage+
+    # and blocks further calls once the running total exceeds a cap. This
+    # is deliberately the other shape from Budget: a call's cost is only
+    # knowable *after* the provider answers, so the guard checked before
+    # dispatch always reflects prior calls' recorded spend, never the
+    # pending call's - the call that pushes spend over the cap always
+    # completes; only the ones after it are blocked. +price_table+ is
+    # caller-supplied ($/token per model) rather than baked in here, since a
+    # price table shipped in the repo goes stale.
+    class SpendGuard
+      def initialize(max_dollars:, price_table:)
+        @max_dollars = max_dollars
+        @price_table = price_table
+        @spent = 0.0
+      end
+
+      def exceeded?
+        @spent > @max_dollars
+      end
+
+      def record!(model:, usage:)
+        rate = @price_table.fetch(model)
+        @spent += (usage[:input_tokens] * rate[:input_token_price]) + (usage[:output_tokens] * rate[:output_token_price])
+      end
+    end
+
     # Appends one JSON line per dispatched request/response to +path+.
     class RecordSink
       def initialize(path:)
@@ -51,10 +77,11 @@ module Canary
       end
     end
 
-    def initialize(provider:, budget:, record_sink:)
+    def initialize(provider:, budget:, record_sink:, spend_guard: nil)
       @provider = provider
       @budget = budget
       @record_sink = record_sink
+      @spend_guard = spend_guard
     end
 
     # Renders +entry+ once (hidden by default, grader-visible when
@@ -76,8 +103,16 @@ module Canary
         ))
       end
 
+      if @spend_guard&.exceeded?
+        return Failure(Providers::Error.new(
+          reason: :spend_exceeded,
+          message: "spend guard exceeded before sample #{index} of #{task_name.inspect}"
+        ))
+      end
+
       @budget.spend!
       result = @provider.sample(model: model, prompt: rendered.text)
+      record_spend!(model, result)
 
       @record_sink.record(
         model: model,
@@ -89,6 +124,12 @@ module Canary
       )
 
       result
+    end
+
+    def record_spend!(model, result)
+      return unless @spend_guard && result.success?
+
+      @spend_guard.record!(model: model, usage: result.success.raw[:usage])
     end
 
     def payload_for(result)
