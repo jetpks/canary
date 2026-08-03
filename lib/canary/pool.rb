@@ -319,7 +319,7 @@ module Canary
       Coverage.start(lines: true, branches: true) if coverage
 
       result = adapter_class.new.run(submission_path)
-      result.coverage = coverage_result if coverage
+      result = result.with(coverage: coverage_result) if coverage
       result
     rescue StandardError => e
       RolloutResult.new(
@@ -342,7 +342,7 @@ module Canary
       result = adapter_class.new.run_task(solution_path: task.solution_path, test_path: task.test_path) do
         Coverage.start(lines: true, branches: true) if coverage
       end
-      result.coverage = coverage_result if coverage
+      result = result.with(coverage: coverage_result) if coverage
       result
     rescue StandardError => e
       RolloutResult.new(

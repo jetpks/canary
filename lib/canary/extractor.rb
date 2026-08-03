@@ -14,7 +14,7 @@ module Canary
   # against all four real fixtures in extractor_test.rb; picking the longest
   # block instead picks the usage example on claude-haiku-4-5-20251001).
   class Extractor
-    Result = Struct.new(:code, :outcome, keyword_init: true)
+    Result = Data.define(:code, :outcome)
 
     FENCE = "```"
     RUBY_TAGS = ["", "ruby"].freeze

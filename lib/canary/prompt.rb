@@ -13,7 +13,7 @@ module Canary
   # is diagnostic only, for measuring per-task grader strength later - never
   # the default, and it is the only mode that reads the grader file.
   class Prompt
-    Result = Struct.new(:text, :mode, keyword_init: true)
+    Result = Data.define(:text, :mode)
 
     HIDDEN_PREAMBLE = <<~TEXT.freeze
       You are given a Ruby task. Implement it so the task's test suite passes.

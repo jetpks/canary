@@ -1,7 +1,7 @@
 require "test_helper"
 
 # Proves Canary::Eval::Record's own contract: #scored? reads the scored
-# field, and the shape is a plain Struct with no required fields beyond
+# field, and the shape is a plain Data value object with no required fields beyond
 # whatever the caller supplies (Canary::Eval::Report and the results-schema
 # gate build records with only a handful of keys set).
 class RecordTest < Minitest::Test

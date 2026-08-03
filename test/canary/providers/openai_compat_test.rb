@@ -206,6 +206,28 @@ class OpenAICompatTest < Minitest::Test
     assert_equal :transport_error, result.failure.reason
   end
 
+  # AC7/I19 F4: the Qwen privacy-404 diagnosis had to re-buy this evidence
+  # once already because it was dropped here - a non-2xx response body must
+  # survive on Error#raw exactly like every other failure shape on this
+  # boundary.
+  def test_a_non_2xx_status_preserves_the_response_body_on_raw
+    transport = ->(uri:, headers:, body:) { fake_response(404, {error: {message: "no endpoints found matching your data policy"}}) }
+    provider = Canary::Providers::OpenAICompat.new(base_url: BASE_URL, api_key: "bad-key", transport: transport)
+
+    result = provider.sample(model: "m", prompt: "p")
+
+    assert_equal({error: {message: "no endpoints found matching your data policy"}}, result.failure.raw)
+  end
+
+  def test_a_non_2xx_status_with_a_non_json_body_wraps_it_on_raw_rather_than_dropping_it
+    transport = ->(uri:, headers:, body:) { fake_raw_response(502, "<html>Bad Gateway</html>") }
+    provider = Canary::Providers::OpenAICompat.new(base_url: BASE_URL, api_key: "bad-key", transport: transport)
+
+    result = provider.sample(model: "m", prompt: "p")
+
+    assert_equal({body: "<html>Bad Gateway</html>"}, result.failure.raw)
+  end
+
   def test_a_connection_failure_is_a_transport_failure_without_a_live_call
     provider = Canary::Providers::OpenAICompat.new(base_url: "http://127.0.0.1:1", api_key: "sk-fixture-not-a-real-key")
 
@@ -213,6 +235,16 @@ class OpenAICompatTest < Minitest::Test
 
     assert result.failure?
     assert_equal :transport_error, result.failure.reason
+  end
+
+  # AC7: the rescue in #sample names only the transport/parse error classes
+  # it actually expects - anything else (a bug, not a transport failure)
+  # must propagate rather than be swallowed as a content failure.
+  def test_an_unexpected_error_from_the_transport_propagates_rather_than_being_caught
+    transport = ->(uri:, headers:, body:) { raise ArgumentError, "boom" }
+    provider = Canary::Providers::OpenAICompat.new(base_url: BASE_URL, api_key: "sk-fixture", transport: transport)
+
+    assert_raises(ArgumentError) { provider.sample(model: "m", prompt: "p") }
   end
 
   # The one live test in this file, and the pattern every live test in
@@ -231,13 +263,23 @@ class OpenAICompatTest < Minitest::Test
     refute_empty result.success.text
   end
 
+  # I19 F2: gpt-oss-20b @ max_tokens: 16 can never pass against a
+  # reasoning-only catalog entry - it burns the whole budget on reasoning
+  # before any visible text appears. deepseek-v4-flash is the model
+  # bin/eval_sweep.rb's own Fireworks probe uses (AC8/Audit D), run here at
+  # its configured reasoning effort and a budget with real margin over the
+  # 64 tokens the sweep's own preflight already proved sufficient.
   def test_live_fireworks_completes_a_real_call
     skip "set CANARY_LIVE=1 to spend on the real API" unless ENV["CANARY_LIVE"]
     skip "CANARY_LIVE is set but no FIREWORKS_API_KEY was loaded - is .env present?" unless ENV["FIREWORKS_API_KEY"]
 
-    provider = Canary::Providers::OpenAICompat.new(base_url: "https://api.fireworks.ai/inference/v1", api_key: ENV["FIREWORKS_API_KEY"], max_tokens: 16)
+    model = "accounts/fireworks/models/deepseek-v4-flash"
+    provider = Canary::Providers::OpenAICompat.new(
+      base_url: "https://api.fireworks.ai/inference/v1", api_key: ENV["FIREWORKS_API_KEY"], max_tokens: 256,
+      extra_body_by_model: {model => {reasoning_effort: "low"}}
+    )
 
-    result = provider.sample(model: "accounts/fireworks/models/gpt-oss-20b", prompt: "Reply with the single word: canary")
+    result = provider.sample(model: model, prompt: "Reply with the single word: canary")
 
     assert result.success?, "live call failed: #{result.failure&.message}"
     refute_empty result.success.text
@@ -256,7 +298,11 @@ class OpenAICompatTest < Minitest::Test
   end
 
   def fake_response(status, body_hash)
-    Struct.new(:code, :body).new(status.to_s, JSON.generate(body_hash))
+    fake_raw_response(status, JSON.generate(body_hash))
+  end
+
+  def fake_raw_response(status, raw_body)
+    Struct.new(:code, :body).new(status.to_s, raw_body)
   end
 
   def build_provider(body_hash)

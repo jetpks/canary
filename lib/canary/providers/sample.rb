@@ -6,6 +6,10 @@ module Canary
     # +stop_reason+ is the provider's own termination signal (a Symbol) -
     # first-class so callers never have to dig a provider-shaped key out
     # of +raw+ to learn how a completion ended.
-    Sample = Struct.new(:text, :raw, :stop_reason, keyword_init: true)
+    Sample = Data.define(:text, :raw, :stop_reason) do
+      def initialize(stop_reason: nil, **rest)
+        super(stop_reason: stop_reason, **rest)
+      end
+    end
   end
 end

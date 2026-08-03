@@ -14,24 +14,26 @@ module Canary
     # training-data cutoff attestation a sourced task must carry - nil for
     # an authored one, since there's nothing to attest to.
     #
-    # Both are real members of the Struct (Entry.members includes them), so
-    # exhaustive per-field reflection elsewhere (prompt_test.rb's
+    # Both are real members of the Data class (Entry.members includes them),
+    # so exhaustive per-field reflection elsewhere (prompt_test.rb's
     # test_hidden_mode_leaks_no_entry_field_other_than_statement) sees them
-    # like any other field. The custom #initialize exists only to default
-    # provenance: "authored" and source_attestation: nil when a caller
-    # doesn't pass them, so every existing Entry.new call site - #load_task
-    # below and every test that builds an Entry without naming these two -
-    # keeps working unmodified.
-    Entry = Struct.new(:name, :category, :statement, :adapter, :reference, :broken_solutions, :provenance, :source_attestation, keyword_init: true) do
-      def initialize(provenance: "authored", source_attestation: nil, **rest)
-        super(**rest, provenance: provenance, source_attestation: source_attestation)
+    # like any other field. The custom #initialize defaults provenance:
+    # "authored" and source_attestation: nil when a caller doesn't pass
+    # them, and nils out category/adapter/broken_solutions when omitted too
+    # (Data.define has no equivalent to Struct's free keyword_init nil-fill -
+    # several tests build a fixture Entry with only name/statement/reference),
+    # so every existing Entry.new call site - #load_task below and every test
+    # that builds a partial Entry - keeps working unmodified.
+    Entry = Data.define(:name, :category, :statement, :adapter, :reference, :broken_solutions, :provenance, :source_attestation) do
+      def initialize(category: nil, adapter: nil, broken_solutions: nil, provenance: "authored", source_attestation: nil, **rest)
+        super(category: category, adapter: adapter, broken_solutions: broken_solutions, provenance: provenance, source_attestation: source_attestation, **rest)
       end
     end
 
     # +misconception+ is a free-text description of the plausible mistake
     # this solution embodies - documentation, not a score (BRIEF §6.1 is
     # unresolved; this corpus carries no numeric difficulty or weight).
-    BrokenSolution = Struct.new(:id, :misconception, :task, keyword_init: true)
+    BrokenSolution = Data.define(:id, :misconception, :task)
 
     def self.all(root: ROOT)
       new(root).all

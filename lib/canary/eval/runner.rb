@@ -25,7 +25,7 @@ module Canary
       # wall-clock benefit over running 91 calls strictly sequentially.
       DEFAULT_CONCURRENCY = 5
 
-      Job = Struct.new(:entry, :model, :index, :grader) do
+      Job = Data.define(:entry, :model, :index, :grader) do
         def render_mode
           grader ? :grader_visible : :hidden
         end
