@@ -108,7 +108,95 @@ class SamplerTest < Minitest::Test
     assert_includes result.failure.message, "APIConnectionError"
   end
 
+  def test_a_max_tokens_stop_reason_is_a_truncated_failure_not_a_success
+    provider = Canary::Providers::Anthropic.new(client: client_returning(load_response("truncated")))
+
+    result = provider.sample(model: "claude-opus-5", prompt: "hello")
+
+    assert result.failure?
+    assert_equal :truncated, result.failure.reason
+    assert_includes result.failure.message, "max_tokens"
+  end
+
+  # Real recorded shapes (see test/canary/sampler_fixtures/responses): a
+  # single text block (haiku) and thinking-then-text (sonnet/opus/fable).
+  # extract_text has to select the text block by +type+ rather than assume
+  # position - reimplementing it as +content[0].text+ passes on the single-
+  # block shape and raises NoMethodError on the thinking-block-first shape
+  # (Anthropic::Models::ThinkingBlock has no +#text+), which is exactly what
+  # this test catches.
+  def test_extract_text_handles_both_live_response_shapes
+    single = load_response("single_text_block")
+    thinking_then_text = load_response("thinking_and_text")
+
+    single_result = Canary::Providers::Anthropic.new(client: client_returning(single)).sample(model: "m", prompt: "p")
+    thinking_result = Canary::Providers::Anthropic.new(client: client_returning(thinking_then_text)).sample(model: "m", prompt: "p")
+
+    assert_equal single.content.first.text, single_result.success.text
+    assert_equal thinking_then_text.content.select { |b| b.type == :text }.map(&:text).join, thinking_result.success.text
+  end
+
+  def test_spend_guard_lets_the_call_that_exceeds_it_complete_then_blocks_the_next_one
+    usage = {input_tokens: 128, output_tokens: 1024}
+    fake = Canary::Providers::Fake.new { |model:, prompt:| Dry::Monads::Success(Canary::Providers::Sample.new(text: "x", raw: {usage: usage})) }
+    spend_guard = Canary::Sampler::SpendGuard.new(max_dollars: 5.0, price_table: {"claude-fixture-model" => {input_token_price: 0, output_token_price: 0.01}})
+    sampler = Canary::Sampler.new(
+      provider: fake,
+      budget: Canary::Sampler::Budget.new(max_samples: 5),
+      record_sink: Canary::Sampler::RecordSink.new(path: @record_path),
+      spend_guard: spend_guard
+    )
+
+    results = sampler.call(@entry, model: "claude-fixture-model", n: 2)
+
+    assert results[0].success?, "the call whose own cost pushes spend over the cap must still complete - cost is unknowable before it runs"
+    assert results[1].failure?
+    assert_equal :spend_exceeded, results[1].failure.reason
+    assert_equal 1, fake.calls.size
+  end
+
+  def test_spend_guard_counts_thinking_tokens_as_ordinary_output_not_excluded
+    usage = {input_tokens: 128, output_tokens: 1024, output_tokens_details: {thinking_tokens: 487}}
+    price_table = {"m" => {input_token_price: 0, output_token_price: 0.075}}
+
+    guard = Canary::Sampler::SpendGuard.new(max_dollars: 50.0, price_table: price_table)
+    guard.record!(model: "m", usage: usage)
+
+    # 1024 output tokens * $0.075 = $76.80, over the $50 cap. A price model
+    # that excludes thinking would compute (1024 - 487) * $0.075 = $40.28,
+    # under the cap - output_tokens_details is a read-only breakdown of an
+    # already-inclusive output_tokens, not tokens to add or subtract.
+    assert guard.exceeded?
+  end
+
+  def test_budget_and_spend_guard_are_independent_pre_flight_checks
+    fake = Canary::Providers::Fake.new
+    exhausted_spend_guard = Canary::Sampler::SpendGuard.new(max_dollars: -1, price_table: {})
+    sampler = Canary::Sampler.new(
+      provider: fake,
+      budget: Canary::Sampler::Budget.new(max_samples: 5),
+      record_sink: Canary::Sampler::RecordSink.new(path: @record_path),
+      spend_guard: exhausted_spend_guard
+    )
+
+    result = sampler.call(@entry, model: "claude-fixture-model", n: 1).first
+
+    assert result.failure?
+    assert_equal :spend_exceeded, result.failure.reason
+    assert_empty fake.calls
+  end
+
   private
+
+  def client_returning(message)
+    messages = Struct.new(:message) { def create(**_kw) = message }.new(message)
+    Struct.new(:messages).new(messages)
+  end
+
+  def load_response(name)
+    path = File.join(FIXTURES, "responses", "#{name}.json")
+    Anthropic::Models::Message.new(JSON.parse(File.read(path), symbolize_names: true))
+  end
 
   def build_sampler(provider:, max_samples:)
     Canary::Sampler.new(

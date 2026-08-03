@@ -1,0 +1,27 @@
+{
+  "id": "msg_011CdeyBF7griY2kuNnGDG7W",
+  "content": [
+    {
+      "text": "# Ruby Memoizer Implementation\n\n```ruby\nclass Memoizer\n  def self.wrap(&computation)\n    memoized = false\n    result = nil\n    \n    lambda do |*args, **kwargs|\n      unless memoized\n        result = computation.call(*args, **kwargs)\n        memoized = true\n      end\n      result\n    end\n  end\nend\n```\n\n## Explanation\n\nThe key requirements are:\n1. **Computation runs at most once** - We use a `memoized` flag to track whether computation has been called\n2. **Handles falsy return values** - We can't use `result ||= ...` because that would re-run if result is `nil` or `false`. Instead, we use a separate boolean flag\n3. **Returns a callable** - We return a `lambda` (which is a `Proc` that acts as a callable)\n4. **Forwards arguments** - We capture `*args` and `**kwargs` and pass them through to the computation block on the first call\n\n## How it works\n\n1. When `Memoizer.wrap` is called with a block, it creates a closure that captures:\n   - `memoized` - boolean flag tracking if computation has run\n   - `result` - stores the return value from computation\n   - `computation` - the block itself\n\n2. The returned lambda, when called:\n   - Checks if `memoized` is false\n   - If not yet memoized, calls the computation block with all arguments and stores the result\n   - Sets `memoized` to true so subsequent calls skip the computation\n   - Returns the stored result (whether it's nil, false, or any other value)\n\n3. Subsequent calls to the lambda return the cached result without re-invoking computation\n\n```ruby\n# Example usage:\ncall_count = 0\nmemoized = Memoizer.wrap do |x|\n  call_count += 1\n  x * 2\nend\n\nmemoized.call(5)  # => 10, call_count = 1\nmemoized.call(5)  # => 10, call_count = 1 (not re-computed)\nmemoized.call(99) # => 10, call_count = 1 (ignores new arguments, returns cached result)\n\n# Works with falsy values:\nmemoized_nil = Memoizer.wrap { nil }\nmemoized_nil.call  # => nil\nmemoized_nil.call  # => nil (not re-computed)\n```",
+      "type": "text"
+    }
+  ],
+  "model": "claude-haiku-4-5-20251001",
+  "role": "assistant",
+  "stop_details": null,
+  "stop_reason": "end_turn",
+  "stop_sequence": null,
+  "type": "message",
+  "usage": {
+    "cache_creation": {
+      "ephemeral_1h_input_tokens": 0,
+      "ephemeral_5m_input_tokens": 0
+    },
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "inference_geo": "not_available",
+    "input_tokens": 95,
+    "output_tokens": 591,
+    "service_tier": "standard"
+  }
+}

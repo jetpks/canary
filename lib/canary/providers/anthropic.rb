@@ -15,25 +15,30 @@ module Canary
     # +stop_reason: :refusal+ is a content outcome on an otherwise
     # successful HTTP response (see Anthropic::Models::StopReason), not an
     # exception - it is handled as a Failure here rather than left to
-    # surface as a crash.
+    # surface as a crash. +stop_reason: :max_tokens+ is handled the same
+    # way: the response is well-formed HTTP-wise, but the text it carries
+    # ends wherever the token budget ran out, mid-word if that's where it
+    # landed - a Success here would be indistinguishable from a complete
+    # answer to every caller downstream.
     class Anthropic
       include Dry::Monads[:result]
 
-      DEFAULT_MAX_TOKENS = 1024
+      DEFAULT_MAX_TOKENS = 4096
 
       def initialize(client: ::Anthropic::Client.new, max_tokens: DEFAULT_MAX_TOKENS)
         @client = client
         @max_tokens = max_tokens
       end
 
-      def sample(model:, prompt:)
+      def sample(model:, prompt:, max_tokens: @max_tokens)
         response = @client.messages.create(
           model: model,
-          max_tokens: @max_tokens,
+          max_tokens: max_tokens,
           messages: [{role: "user", content: prompt}]
         )
 
         return Failure(Error.new(reason: :refusal, message: "provider refused: stop_reason=refusal")) if response.stop_reason == :refusal
+        return Failure(Error.new(reason: :truncated, message: "response truncated: stop_reason=max_tokens, max_tokens=#{max_tokens}")) if response.stop_reason == :max_tokens
 
         Success(Sample.new(text: extract_text(response), raw: response.deep_to_h))
       rescue ::Anthropic::Errors::APIError => e
