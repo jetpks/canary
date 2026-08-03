@@ -130,7 +130,13 @@ class SamplerTest < Minitest::Test
   # to catch the class of break a fixture cannot, where the real API changes
   # shape underneath us and every fixture-backed test stays green.
   def test_live_provider_completes_a_real_call
-    skip "set CANARY_LIVE=1 (and a .env with ANTHROPIC_API_KEY) to spend on the real API" unless ENV["CANARY_LIVE"]
+    # Both halves matter: CANARY_LIVE is the intent, a loaded key is the
+    # capability. Checking only the flag turns a missing .env into a 401
+    # failure that reads like a broken provider instead of an absent
+    # credential - which is the confusing shape a worktree without the
+    # symlink would otherwise hand a lane.
+    skip "set CANARY_LIVE=1 to spend on the real API" unless ENV["CANARY_LIVE"]
+    skip "CANARY_LIVE is set but no ANTHROPIC_API_KEY was loaded - is .env present?" unless ENV["ANTHROPIC_API_KEY"]
 
     provider = Canary::Providers::Anthropic.new(max_tokens: 16)
 
