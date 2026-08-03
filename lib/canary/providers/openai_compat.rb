@@ -36,15 +36,26 @@ module Canary
         end
       end
 
-      def initialize(base_url:, api_key:, max_tokens: DEFAULT_MAX_TOKENS, transport: DEFAULT_TRANSPORT)
+      # +extra_body_by_model+ merges provider- and model-specific request
+      # fields (e.g. OpenRouter's "reasoning": {"effort" => "low"}, or
+      # Fireworks' "reasoning_effort" => "low") into the POST body for
+      # whichever model is being sampled - a lookup by model id rather than
+      # a single fixed hash, since one provider instance here serves every
+      # model routed through its endpoint (bin/eval_sweep.rb), and a
+      # reasoning-heavy model needs a different setting than one that
+      # doesn't reason at all. Absent from the hash for a given model is a
+      # no-op merge, not an error - most models need nothing extra.
+      def initialize(base_url:, api_key:, max_tokens: DEFAULT_MAX_TOKENS, transport: DEFAULT_TRANSPORT, extra_body_by_model: {})
         @uri = URI("#{base_url}/chat/completions")
         @api_key = api_key
         @max_tokens = max_tokens
         @transport = transport
+        @extra_body_by_model = extra_body_by_model
       end
 
       def sample(model:, prompt:, max_tokens: @max_tokens)
-        body = JSON.generate(model: model, max_tokens: max_tokens, messages: [{role: "user", content: prompt}])
+        body_hash = {model: model, max_tokens: max_tokens, messages: [{role: "user", content: prompt}]}.merge(@extra_body_by_model.fetch(model, {}))
+        body = JSON.generate(body_hash)
         headers = {"Authorization" => "Bearer #{@api_key}", "Content-Type" => "application/json"}
         response = @transport.call(uri: @uri, headers: headers, body: body)
 
