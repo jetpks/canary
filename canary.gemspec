@@ -19,7 +19,10 @@ Gem::Specification.new do |spec|
   # gem-relative (../../tasks from lib/canary/task_repo.rb), so the corpus
   # must ship for TaskRepo.all's default root to resolve in an installed gem
   # instead of dangling the way .rubocop.yml once did (I07 D2).
-  spec.files         = Dir["lib/**/*.rb"] + ["LICENSE", "README.md", ".rubocop.yml"] + Dir["tasks/**/*"].select { |f| File.file?(f) }
+  #
+  # docs/** ships so a gem consumer can read docs/CONTAMINATION.md - the
+  # eval itself has no surface to publish it through (I17).
+  spec.files         = Dir["lib/**/*.rb"] + ["LICENSE", "README.md", ".rubocop.yml"] + Dir["tasks/**/*"].select { |f| File.file?(f) } + Dir["docs/**/*"].select { |f| File.file?(f) }
   spec.require_paths = ["lib"]
 
   spec.add_dependency "anthropic", "~> 1.59"

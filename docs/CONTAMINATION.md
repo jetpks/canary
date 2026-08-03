@@ -52,8 +52,10 @@ itself, so nothing added to `Entry` — including the provenance fields this
 lane adds — can reach a prompt through that class. This is proven, not just
 argued: the `no-mechanism-leak` gate and `test/canary/prompt_test.rb`'s
 `test_hidden_mode_leaks_no_entry_field_other_than_statement` (which reflects
-over every `Entry` member and asserts none of it appears in hidden-mode
-text) both pass with this lane's changes in place. What this buys: a model
+over every `Entry` member — `provenance` and `source_attestation` included,
+now real `Struct` members rather than fields reachable only through an
+attr_reader outside `Entry.members`'s view — and asserts none of it appears
+in hidden-mode text) both pass with this lane's changes in place. What this buys: a model
 answering hidden mode cannot be pattern-matching against the grader or the
 misconception catalogue built for it — that content genuinely never reaches
 it. What it does not buy: any claim that the model hasn't seen semantically
