@@ -30,6 +30,16 @@ class OpenAICompatTest < Minitest::Test
     assert_includes result.failure.message, "64"
   end
 
+  # AC6: the truncated response's own visible text travels on Error#text
+  # rather than being reduced to a reason code.
+  def test_finish_reason_length_carries_the_responses_visible_text
+    provider = build_provider(response_for(finish_reason: "length", content: "cut off mid"))
+
+    result = provider.sample(model: "m", prompt: "p")
+
+    assert_equal "cut off mid", result.failure.text
+  end
+
   def test_finish_reason_content_filter_is_a_refusal_failure
     provider = build_provider(response_for(finish_reason: "content_filter", content: nil))
 
@@ -39,6 +49,22 @@ class OpenAICompatTest < Minitest::Test
     assert_equal :refusal, result.failure.reason
   end
 
+  def test_finish_reason_content_filter_with_no_content_carries_nil_text
+    provider = build_provider(response_for(finish_reason: "content_filter", content: nil))
+
+    result = provider.sample(model: "m", prompt: "p")
+
+    assert_nil result.failure.text
+  end
+
+  def test_finish_reason_content_filter_with_visible_text_carries_it
+    provider = build_provider(response_for(finish_reason: "content_filter", content: "here is what I have so far"))
+
+    result = provider.sample(model: "m", prompt: "p")
+
+    assert_equal "here is what I have so far", result.failure.text
+  end
+
   def test_an_absent_finish_reason_is_a_content_failure
     provider = build_provider(response_for(finish_reason: nil, content: "something"))
 
@@ -46,6 +72,7 @@ class OpenAICompatTest < Minitest::Test
 
     assert result.failure?
     assert_equal :unexpected_finish_reason, result.failure.reason
+    assert_equal "something", result.failure.text
   end
 
   def test_a_tool_calls_finish_reason_is_a_content_failure
@@ -74,6 +101,7 @@ class OpenAICompatTest < Minitest::Test
 
     assert result.failure?
     assert_equal :empty_completion, result.failure.reason
+    assert_nil result.failure.text
   end
 
   def test_nil_content_despite_finish_reason_stop_is_a_content_failure_not_a_success
@@ -83,6 +111,7 @@ class OpenAICompatTest < Minitest::Test
 
     assert result.failure?
     assert_equal :empty_completion, result.failure.reason
+    assert_nil result.failure.text
   end
 
   def test_usage_tokens_are_surfaced_on_success

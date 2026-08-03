@@ -186,7 +186,71 @@ class RunnerTest < Minitest::Test
     refute record.passed
   end
 
+  # AC7's four branches: a provider Failure whose error.text is non-nil gets
+  # the identical shot at the grader a Success gets, honestly, without ever
+  # widening the provider's own monad arm into a Success.
+
+  def test_a_truncated_failure_with_parseable_content_is_graded_scored_true_with_honest_stop_reason
+    runner = Canary::Eval::Runner.new(sampler: build_sampler(truncated_failure_fake(VALID_CODE_RESPONSE)))
+
+    record = runner.call(entries: [build_entry], models: ["fixture-model"], k: 1, grader: false).first
+
+    assert record.scored?
+    assert_nil record.non_score_reason
+    assert record.passed
+    assert_equal :max_tokens, record.stop_reason
+  end
+
+  def test_a_truncated_failure_with_no_text_is_a_non_score_unchanged
+    fake = Canary::Providers::Fake.new { |model:, prompt:| Dry::Monads::Failure(Canary::Providers::Error.new(reason: :truncated, message: "response truncated", raw: {stop_reason: :max_tokens})) }
+    runner = Canary::Eval::Runner.new(sampler: build_sampler(fake))
+
+    record = runner.call(entries: [build_entry], models: ["fixture-model"], k: 1, grader: false).first
+
+    refute record.scored?
+    assert_equal :truncated, record.non_score_reason
+    assert_nil record.passed
+  end
+
+  def test_a_truncated_failure_with_unparseable_text_is_a_non_score
+    runner = Canary::Eval::Runner.new(sampler: build_sampler(truncated_failure_fake(TRUNCATED_CODE_RESPONSE)))
+
+    record = runner.call(entries: [build_entry], models: ["fixture-model"], k: 1, grader: false).first
+
+    refute record.scored?
+    assert_equal :truncated, record.non_score_reason
+    assert_nil record.passed
+  end
+
+  def test_a_refusal_failure_with_visible_text_routes_through_the_same_graded_path_honestly
+    fake = Canary::Providers::Fake.new do |model:, prompt:|
+      Dry::Monads::Failure(Canary::Providers::Error.new(
+        reason: :refusal, message: "provider refused",
+        raw: {stop_reason: :refusal, usage: {input_tokens: 1, output_tokens: 1}},
+        text: VALID_CODE_RESPONSE
+      ))
+    end
+    runner = Canary::Eval::Runner.new(sampler: build_sampler(fake))
+
+    record = runner.call(entries: [build_entry], models: ["fixture-model"], k: 1, grader: false).first
+
+    assert record.scored?
+    assert_nil record.non_score_reason
+    assert record.passed
+    assert_equal :refusal, record.stop_reason
+  end
+
   private
+
+  def truncated_failure_fake(text)
+    Canary::Providers::Fake.new do |model:, prompt:|
+      Dry::Monads::Failure(Canary::Providers::Error.new(
+        reason: :truncated, message: "response truncated: stop_reason=max_tokens",
+        raw: {stop_reason: :max_tokens, usage: {input_tokens: 1, output_tokens: 1}},
+        text: text
+      ))
+    end
+  end
 
   def success_fake(text)
     Canary::Providers::Fake.new { |model:, prompt:| Dry::Monads::Success(Canary::Providers::Sample.new(text: text, raw: {usage: {input_tokens: 1, output_tokens: 1}}, stop_reason: :end_turn)) }

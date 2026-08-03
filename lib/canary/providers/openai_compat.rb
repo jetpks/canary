@@ -80,20 +80,28 @@ module Canary
 
         case finish_reason
         when "stop"
-          return content_failure(:empty_completion, "empty completion despite finish_reason=stop", raw) if content.nil? || content.empty?
+          return content_failure(:empty_completion, "empty completion despite finish_reason=stop", raw, content) if content.nil? || content.empty?
 
           Success(Sample.new(text: content, raw: raw, stop_reason: :stop))
         when "length"
-          content_failure(:truncated, "response truncated: finish_reason=length, max_tokens=#{max_tokens}", raw)
+          content_failure(:truncated, "response truncated: finish_reason=length, max_tokens=#{max_tokens}", raw, content)
         when "content_filter"
-          content_failure(:refusal, "provider refused: finish_reason=content_filter", raw)
+          content_failure(:refusal, "provider refused: finish_reason=content_filter", raw, content)
         else
-          content_failure(:unexpected_finish_reason, "unexpected finish_reason=#{finish_reason.inspect}", raw)
+          content_failure(:unexpected_finish_reason, "unexpected finish_reason=#{finish_reason.inspect}", raw, content)
         end
       end
 
-      def content_failure(reason, message, raw)
-        Failure(Error.new(reason: reason, message: message, raw: raw))
+      # +content+ travels through as Error#text, nil-normalized the same
+      # way visible_text does below - empty_completion's call site always
+      # has a nil/empty content by construction, so no special-casing is
+      # needed there.
+      def content_failure(reason, message, raw, content = nil)
+        Failure(Error.new(reason: reason, message: message, raw: raw, text: visible_text(content)))
+      end
+
+      def visible_text(content)
+        content unless content.nil? || content.empty?
       end
 
       # Anthropic's raw response happens to already carry top-level
