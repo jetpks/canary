@@ -48,6 +48,74 @@ class EvalSweepTest < Minitest::Test
     ENV.delete("CANARY_SWEEP_SKIP")
   end
 
+  # I24: with no model given, select_models falls back to the full-sweep
+  # path - the full configured sets, narrowed only by CANARY_SWEEP_SKIP,
+  # exactly EvalSweep.run's pre-I24 behavior.
+  def test_select_models_with_no_model_returns_the_full_configured_sets_and_no_skip
+    hidden, visible, skip = EvalSweep.select_models(nil)
+
+    assert_equal EvalSweep::HIDDEN_MODELS, hidden
+    assert_equal EvalSweep::VISIBLE_MODELS, visible
+    assert_empty skip
+  end
+
+  def test_select_models_with_no_model_still_honors_canary_sweep_skip
+    ENV["CANARY_SWEEP_SKIP"] = "claude-sonnet-5"
+
+    hidden, visible, skip = EvalSweep.select_models(nil)
+
+    refute_includes hidden, "claude-sonnet-5"
+    refute_includes visible, "claude-sonnet-5"
+    assert_equal ["claude-sonnet-5"], skip
+  ensure
+    ENV.delete("CANARY_SWEEP_SKIP")
+  end
+
+  # A visible-arm model (also a hidden-arm model, per
+  # test_visible_models_are_both_anthropic_anchors_per_ac8) narrows both
+  # arms to just itself.
+  def test_select_models_with_a_visible_model_narrows_both_arms_to_it
+    hidden, visible, skip = EvalSweep.select_models("claude-sonnet-5")
+
+    assert_equal ["claude-sonnet-5"], hidden
+    assert_equal ["claude-sonnet-5"], visible
+    assert_empty skip
+  end
+
+  # Every OpenRouter/Fireworks model is hidden-only - selecting one must
+  # leave the visible arm empty rather than running it anyway.
+  def test_select_models_with_a_hidden_only_model_leaves_the_visible_arm_empty
+    hidden, visible, _skip = EvalSweep.select_models("deepseek/deepseek-v4-flash")
+
+    assert_equal ["deepseek/deepseek-v4-flash"], hidden
+    assert_empty visible
+  end
+
+  # AC3: an unknown model aborts before any env/key demand, naming the known
+  # models - MODEL_PROVIDERS is the authority on what's known.
+  def test_select_models_aborts_on_an_unknown_model_naming_the_known_models
+    _out, err = capture_io do
+      assert_raises(SystemExit) { EvalSweep.select_models("not-a-real-model") }
+    end
+
+    assert_match(/not-a-real-model/, err)
+    EvalSweep::MODEL_PROVIDERS.each_key { |model| assert_includes err, model }
+  end
+
+  # AC3: the narrowed-cap defect this closes - EvalSweep.run used to derive
+  # the spend cap from the full configured sets regardless of what
+  # select_models actually narrowed to. Proven here at the seam self.run
+  # wires together: the same narrowed sets select_models returns, fed into
+  # spend_cap_derivation, must yield a smaller cap than the full-set default.
+  def test_spend_cap_derivation_follows_a_single_model_selection_narrower_than_the_full_sweep
+    hidden, visible, _skip = EvalSweep.select_models("deepseek/deepseek-v4-flash")
+
+    narrowed_cap, = EvalSweep.spend_cap_derivation(tasks_count: 10, hidden_models: hidden, visible_models: visible)
+    full_cap, = EvalSweep.spend_cap_derivation(tasks_count: 10)
+
+    assert_operator narrowed_cap, :<, full_cap
+  end
+
   # AC10: 3x the worst-case spend if every configured call maxed out
   # max_tokens, against a fixed model set/task count/price table so the
   # expected number is hand-computable rather than re-deriving the
