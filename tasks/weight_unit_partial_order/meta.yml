@@ -1,0 +1,11 @@
+category: "Comparable when the underlying comparison has no defined order for some pairs of operands"
+adapter: rspec
+provenance: authored
+statement: "Implement Weight.new(amount, unit), constructed with a numeric amount and a unit (any object identifying the unit, such as a Symbol like :kg or :lb), exposed unchanged via public #amount and #unit readers. Two Weights with the same unit order strictly by amount - Weight.new(5, :kg) is less than Weight.new(10, :kg) - and support sort, clamp, and between? accordingly whenever every Weight involved shares the same unit. Two Weights are == to each other only when both their unit and their amount are equal; two Weights with different units are never == to each other, even when their amounts happen to match. Comparing two Weights of different units with <, <=, >, or >=, sorting an array that mixes units, or calling clamp or between? with a bound of a different unit, raises ArgumentError rather than silently producing some ordering."
+broken:
+  - id: ignores_unit_in_spaceship
+    misconception: "the ordering comparison compares amount alone and ignores unit entirely, on the mistaken belief that unit only matters for display - so a Weight in :kg and a Weight in :lb with the same amount are wrongly treated as ==, and comparisons or sorts across different units silently produce an ordering instead of raising ArgumentError."
+  - id: custom_eq_ignores_unit
+    misconception: "the ordering comparison correctly refuses to compare Weights of different units, but == is redefined by hand to check amount alone (instead of leaving the Comparable-derived == in place, or checking unit too), on the mistaken belief that equality needs its own separate implementation - so two Weights of different units with matching amounts are wrongly treated as ==, even though every ordering and sorting operation still correctly raises ArgumentError across units."
+  - id: mechanism_free
+    misconception: "the ordering comparison compares amount alone and ignores unit entirely, on the mistaken belief that unit only matters for display - so a Weight in :kg and a Weight in :lb with the same amount are wrongly treated as ==, and comparisons or sorts across different units silently produce an ordering instead of raising ArgumentError - same misconception as ignores_unit_in_spaceship."
