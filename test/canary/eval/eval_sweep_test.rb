@@ -21,7 +21,7 @@ class EvalSweepTest < Minitest::Test
   # raise (fetch, not []) the moment run_arm tried to route it - catching
   # that here, offline, is cheaper than catching it mid-sweep.
   def test_every_configured_model_has_a_declared_provider
-    (EvalSweep::HIDDEN_MODELS + EvalSweep::VISIBLE_MODELS + EvalSweep::STUDIO_MODELS).uniq.each do |model|
+    (EvalSweep::HIDDEN_MODELS + EvalSweep::VISIBLE_MODELS + EvalSweep::STUDIO_MODELS + EvalSweep::ARM_H_MODELS).uniq.each do |model|
       assert EvalSweep::MODEL_PROVIDERS.key?(model), "#{model} has no declared provider"
     end
   end
@@ -29,7 +29,7 @@ class EvalSweepTest < Minitest::Test
   # Likewise for PRICE_TABLE - record_cost's own fetch would raise on a
   # configured model missing a price entry.
   def test_every_configured_model_has_a_price_table_entry
-    (EvalSweep::HIDDEN_MODELS + EvalSweep::VISIBLE_MODELS + EvalSweep::STUDIO_MODELS).uniq.each do |model|
+    (EvalSweep::HIDDEN_MODELS + EvalSweep::VISIBLE_MODELS + EvalSweep::STUDIO_MODELS + EvalSweep::ARM_H_MODELS).uniq.each do |model|
       assert EvalSweep::PRICE_TABLE.key?(model), "#{model} has no price table entry"
     end
   end
@@ -453,6 +453,85 @@ class EvalSweepTest < Minitest::Test
     assert_equal Canary::Eval::Runner::DEFAULT_CONCURRENCY, EvalSweep.runner_concurrency(:anthropic)
     assert_equal Canary::Eval::Runner::DEFAULT_CONCURRENCY, EvalSweep.runner_concurrency(:openrouter)
     assert_equal Canary::Eval::Runner::DEFAULT_CONCURRENCY, EvalSweep.runner_concurrency(:fireworks)
+  end
+
+  # AC1: a bare invocation must never pick up an Arm H model in either arm -
+  # same contract STUDIO_MODELS holds, proven the same way.
+  def test_select_models_with_no_model_never_includes_an_arm_h_model
+    hidden, visible, _skip = EvalSweep.select_models(nil)
+
+    EvalSweep::ARM_H_MODELS.each do |model|
+      refute_includes hidden, model
+      refute_includes visible, model
+    end
+  end
+
+  # AC1: each Arm H id is selectable via the single-model positional
+  # invocation, narrows to the hidden arm only, and routes through
+  # :openrouter (the hosted machinery, not a parallel mechanism).
+  def test_each_arm_h_model_is_selectable_hidden_only_and_routes_through_openrouter
+    EvalSweep::ARM_H_MODELS.each do |model|
+      hidden, visible, skip = EvalSweep.select_models(model)
+
+      assert_equal [model], hidden
+      assert_empty visible
+      assert_empty skip
+      assert_equal :openrouter, EvalSweep::MODEL_PROVIDERS.fetch(model)
+    end
+  end
+
+  # AC2: PROVIDER_PINS carries the frozen R12 phase 1 pin table exactly -
+  # SiliconFlow fp8 for six models, DeepInfra bf16 for
+  # nemotron-3-super-120b-a12b (its only non-fp4 route).
+  def test_arm_h_provider_pins_match_the_frozen_pin_table
+    expected = {
+      "qwen/qwen3.6-27b" => "siliconflow/fp8",
+      "qwen/qwen3.6-35b-a3b" => "siliconflow/fp8",
+      "google/gemma-4-26b-a4b-it" => "siliconflow/fp8",
+      "google/gemma-4-31b-it" => "siliconflow/fp8",
+      "openai/gpt-oss-120b" => "siliconflow/fp8",
+      "qwen/qwen3.5-122b-a10b" => "siliconflow/fp8",
+      "nvidia/nemotron-3-super-120b-a12b" => "deepinfra/bf16"
+    }
+
+    assert_equal expected, EvalSweep::PROVIDER_PINS.slice(*EvalSweep::ARM_H_MODELS)
+  end
+
+  # AC2: every Arm H price row is the pinned backend's live per-token rate
+  # (GET /models/<id>/endpoints, 2026-08-04), not some other endpoint's.
+  def test_arm_h_price_table_matches_the_live_pinned_endpoint_rates
+    expected = {
+      "qwen/qwen3.6-27b" => {input_token_price: 0.0000003, output_token_price: 0.0000032},
+      "qwen/qwen3.6-35b-a3b" => {input_token_price: 0.0000002, output_token_price: 0.0000016},
+      "google/gemma-4-26b-a4b-it" => {input_token_price: 0.00000012, output_token_price: 0.0000004},
+      "google/gemma-4-31b-it" => {input_token_price: 0.00000013, output_token_price: 0.0000004},
+      "openai/gpt-oss-120b" => {input_token_price: 0.00000005, output_token_price: 0.00000045},
+      "qwen/qwen3.5-122b-a10b" => {input_token_price: 0.00000026, output_token_price: 0.00000208},
+      "nvidia/nemotron-3-super-120b-a12b" => {input_token_price: 0.000000085, output_token_price: 0.0000004}
+    }
+
+    expected.each do |model, price|
+      assert_equal price, EvalSweep::PRICE_TABLE.fetch(model)
+    end
+  end
+
+  # AC4 (contract 4): the two reasoning-class Arm H members carry a
+  # low-effort THINKING_EFFORT override, merged alongside their pin.
+  def test_arm_h_reasoning_class_models_get_a_low_effort_thinking_override
+    ["openai/gpt-oss-120b", "nvidia/nemotron-3-super-120b-a12b"].each do |model|
+      body = EvalSweep.extra_body_for(model)
+
+      assert_equal({effort: "low"}, body[:reasoning])
+      assert_equal({order: [EvalSweep::PROVIDER_PINS.fetch(model)], allow_fallbacks: false}, body[:provider])
+    end
+  end
+
+  # Contract 4: the remaining five Arm H members are not reasoning-class
+  # here and get no THINKING_EFFORT entry.
+  def test_arm_h_non_reasoning_models_have_no_thinking_effort_entry
+    (EvalSweep::ARM_H_MODELS - ["openai/gpt-oss-120b", "nvidia/nemotron-3-super-120b-a12b"]).each do |model|
+      refute EvalSweep::THINKING_EFFORT.key?(model), "#{model} unexpectedly has a THINKING_EFFORT entry"
+    end
   end
 
   private
