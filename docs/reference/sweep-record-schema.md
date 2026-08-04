@@ -20,7 +20,7 @@ old records apart from new ones on disk.
 | `sample_index` | Integer | yes | which of the `k` samples for this (task, model) pair. |
 | `render_mode` | `:hidden` or `:grader_visible` | yes | which `Canary::Prompt.render` mode produced the prompt. |
 | `scored` | Boolean | yes | **the load-bearing field.** `false` means the harness never got to judge this sample — a refusal, a truncated response, an unextractable answer, a budget/spend guard trip, a transport error. A `scored: false` record MUST NOT carry a `passed` verdict. |
-| `non_score_reason` | Symbol or nil | when `scored: false` | one of `:refusal`, `:truncated`, `:transport_error`, `:budget_exhausted`, `:spend_exceeded`, `:extractor_refusal`. Never set when `scored: true`. |
+| `non_score_reason` | Symbol or nil | when `scored: false` | one of `:refusal`, `:truncated`, `:premature_stop`, `:transport_error`, `:budget_exhausted`, `:spend_exceeded`, `:extractor_refusal`. Never set when `scored: true`. |
 | `passed` | Boolean or nil | when `scored: true` | whether the rollout succeeded. |
 | `prefilter_clean` | Boolean or nil | when scored, or on a prefilter-truncation non-score | `Canary::Prefilter::Report#clean?` for the extracted code. |
 | `rollout_outcome` | Symbol or nil | when scored | the underlying `Canary::RolloutResult#outcome` (`:ok`, `:error`, `:crash`, `:timeout`, `:invalid`), when a rollout actually ran. |
@@ -46,7 +46,16 @@ From `Canary::Sampler` (`lib/canary/sampler.rb`) and
   anchored at end-of-source, per `Canary::Prefilter::Report#truncated`), or
   the response was truncated before any usable text came back. A truncated
   response whose extracted code *does* parse cleanly is scored normally
-  instead — see `Canary::Eval::Runner#verified_record`.
+  instead — see `Canary::Eval::Runner#verified_record`. Requires
+  provider-evidenced cutoff evidence: the sample's `stop_reason` must be one
+  of `Canary::Eval::Runner::CUTOFF_STOP_REASONS` (`:max_tokens` or
+  `:length`).
+- `:premature_stop` — the extracted code ends mid-construct (the same
+  EOF-anchored `Canary::Prefilter::Report#truncated` parse failure as
+  `:truncated`), but the sample's `stop_reason` does *not* evidence a
+  provider-side cutoff — the model stopped generating on its own and simply
+  wrote code that doesn't parse, rather than being cut off by a token limit
+  (`Canary::Eval::Runner#non_score_reason_for`).
 
 From `Canary::Eval::Runner`:
 
