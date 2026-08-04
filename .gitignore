@@ -10,3 +10,4 @@ Gemfile.lock.orig
 *.gem
 /bench/mutation/target/.mutant/
 /bench/mutation/target/.mutineer/
+tmp/
