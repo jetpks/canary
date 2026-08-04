@@ -19,7 +19,7 @@ class EvalSweepTest < Minitest::Test
   # raise (fetch, not []) the moment run_arm tried to route it - catching
   # that here, offline, is cheaper than catching it mid-sweep.
   def test_every_configured_model_has_a_declared_provider
-    (EvalSweep::HIDDEN_MODELS + EvalSweep::VISIBLE_MODELS).uniq.each do |model|
+    (EvalSweep::HIDDEN_MODELS + EvalSweep::VISIBLE_MODELS + EvalSweep::STUDIO_MODELS).uniq.each do |model|
       assert EvalSweep::MODEL_PROVIDERS.key?(model), "#{model} has no declared provider"
     end
   end
@@ -27,7 +27,7 @@ class EvalSweepTest < Minitest::Test
   # Likewise for PRICE_TABLE - record_cost's own fetch would raise on a
   # configured model missing a price entry.
   def test_every_configured_model_has_a_price_table_entry
-    (EvalSweep::HIDDEN_MODELS + EvalSweep::VISIBLE_MODELS).uniq.each do |model|
+    (EvalSweep::HIDDEN_MODELS + EvalSweep::VISIBLE_MODELS + EvalSweep::STUDIO_MODELS).uniq.each do |model|
       assert EvalSweep::PRICE_TABLE.key?(model), "#{model} has no price table entry"
     end
   end
@@ -69,6 +69,118 @@ class EvalSweepTest < Minitest::Test
     assert_equal ["claude-sonnet-5"], skip
   ensure
     ENV.delete("CANARY_SWEEP_SKIP")
+  end
+
+  # AC1: a bare invocation (model: nil) must never pick up a studio model in
+  # either arm - the local-serving arm only ever runs when named explicitly.
+  def test_select_models_with_no_model_never_includes_a_studio_model
+    hidden, visible, _skip = EvalSweep.select_models(nil)
+
+    EvalSweep::STUDIO_MODELS.each do |model|
+      refute_includes hidden, model
+      refute_includes visible, model
+    end
+  end
+
+  # AC2: each studio alias is selectable via the single-model positional
+  # invocation, narrows to the hidden arm only, and routes through the
+  # :studio provider kind.
+  def test_each_studio_model_is_selectable_hidden_only_and_declares_the_studio_provider
+    EvalSweep::STUDIO_MODELS.each do |model|
+      hidden, visible, skip = EvalSweep.select_models(model)
+
+      assert_equal [model], hidden
+      assert_empty visible
+      assert_empty skip
+      assert_equal :studio, EvalSweep::MODEL_PROVIDERS.fetch(model)
+    end
+  end
+
+  # AC2: every studio alias routes to the studio gateway.
+  def test_studio_provider_base_url_is_the_studio_gateway
+    assert_equal "https://studio.slush.systems/v1", EvalSweep::PROVIDER_BASE_URLS.fetch(:studio)
+  end
+
+  # AC2: every studio alias carries a $0.00 price row - local serving's true
+  # per-token rate.
+  def test_every_studio_model_has_a_zero_dollar_price_row
+    EvalSweep::STUDIO_MODELS.each do |model|
+      price = EvalSweep::PRICE_TABLE.fetch(model)
+
+      assert_equal 0.0, price[:input_token_price]
+      assert_equal 0.0, price[:output_token_price]
+    end
+  end
+
+  # AC5: the studio provider is built with a read timeout generous enough to
+  # survive model hot-load plus a full SWEEP_MAX_TOKENS generation.
+  def test_studio_read_timeout_is_generous_enough_for_a_full_generation
+    assert_operator EvalSweep::STUDIO_READ_TIMEOUT, :>=, 1800
+  end
+
+  # AC6: studio models get no THINKING_EFFORT override - the gateway's
+  # strict schema may reject the unknown body field, and reasoning is left
+  # at the model's own default.
+  def test_studio_models_have_no_thinking_effort_entry
+    EvalSweep::STUDIO_MODELS.each do |model|
+      refute EvalSweep::THINKING_EFFORT.key?(model), "#{model} unexpectedly has a THINKING_EFFORT entry"
+    end
+  end
+
+  # AC6: studio models get no PROVIDER_PINS entry - one backend exists by
+  # construction, so there is nothing to pin.
+  def test_studio_models_have_no_provider_pin
+    EvalSweep::STUDIO_MODELS.each do |model|
+      refute EvalSweep::PROVIDER_PINS.key?(model), "#{model} unexpectedly has a PROVIDER_PINS entry"
+    end
+  end
+
+  # AC6: extra_body_for a studio model must stay a no-op merge, same as any
+  # other model with no THINKING_EFFORT/PROVIDER_PINS entry.
+  def test_extra_body_for_a_studio_model_is_empty
+    EvalSweep::STUDIO_MODELS.each do |model|
+      assert_empty EvalSweep.extra_body_for(model)
+    end
+  end
+
+  # AC3: load_env! must not demand any credential for a studio-only model
+  # set - the gateway takes no real auth (verified live).
+  def test_load_env_does_not_abort_for_a_studio_only_model_set_with_no_credentials
+    ENV["CANARY_LIVE"] = "1"
+
+    EvalSweep.load_env!(models: ["qwen3-27b-optiq"])
+  ensure
+    ENV.delete("CANARY_LIVE")
+  end
+
+  # AC3: build_provider(:studio, ...) must not read any credential from
+  # ENV - it passes STUDIO_API_KEY, a placeholder.
+  def test_build_provider_for_studio_needs_no_credential
+    provider = EvalSweep.build_provider(:studio, ["qwen3-27b-optiq"])
+
+    assert_instance_of Canary::Providers::OpenAICompat, provider
+  end
+
+  # AC4: a $0-priced studio model never trips the spend guard, exercised
+  # against the real SpendGuard collaborator (not a mock) with repeated
+  # full-budget usage recorded against it.
+  def test_a_zero_priced_studio_model_never_trips_the_spend_guard
+    guard = Canary::Sampler::SpendGuard.new(max_dollars: 0, price_table: EvalSweep::PRICE_TABLE)
+
+    5.times { guard.record!(model: "qwen3-27b-optiq", usage: {input_tokens: 1000, output_tokens: EvalSweep::SWEEP_MAX_TOKENS}) }
+
+    refute guard.exceeded?
+  end
+
+  # AC4: spend_cap_derivation prints its zero-cost line and derives a $0 cap
+  # for a studio-only selection, without aborting.
+  def test_spend_cap_derivation_for_a_studio_only_selection_is_zero_and_prints_a_zero_cost_line
+    hidden, visible, _skip = EvalSweep.select_models("qwen3-27b-optiq")
+
+    cap, lines = EvalSweep.spend_cap_derivation(tasks_count: 10, hidden_models: hidden, visible_models: visible)
+
+    assert_equal 0, cap
+    assert_match(/qwen3-27b-optiq.*\$0\.0000/, lines[0])
   end
 
   # A visible-arm model (also a hidden-arm model, per
