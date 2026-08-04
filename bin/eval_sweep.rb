@@ -166,6 +166,26 @@ module EvalSweep
     "accounts/fireworks/models/deepseek-v4-flash" => {reasoning_effort: "low"}
   }.freeze
 
+  # I26 (I25 F4): eval_sweep.rb never pinned OpenRouter routing, so every
+  # "OR arm" was a multi-backend blend across whatever backend OpenRouter's
+  # load balancer picked that call. Pins every :openrouter model (see
+  # MODEL_PROVIDERS) to the one endpoint tag the architect chose 2026-08-04
+  # from the seventh artifact's completions.jsonl modal-backend counts,
+  # joined against the live GET /models/<id>/endpoints tables - every tag
+  # below verified present live. The Fireworks-direct model
+  # (accounts/fireworks/models/deepseek-v4-flash) is deliberately absent:
+  # it hits a different API entirely and must never receive an OpenRouter
+  # routing field.
+  PROVIDER_PINS = {
+    "deepseek/deepseek-v4-flash" => "alibaba/fp8",
+    "deepseek/deepseek-v4-pro" => "alibaba/fp8",
+    "moonshotai/kimi-k3" => "baseten/fp8",
+    "moonshotai/kimi-k2.7-code" => "coreweave/int4",
+    "qwen/qwen3-coder-plus" => "alibaba/fp8",
+    "qwen/qwen3.7-max" => "alibaba/fp8",
+    "z-ai/glm-5.2" => "baseten/fp8"
+  }.freeze
+
   # The eval's own token budget, passed explicitly to every provider
   # .build_provider constructs below - the library defaults
   # (Providers::Anthropic::DEFAULT_MAX_TOKENS,
@@ -240,7 +260,7 @@ module EvalSweep
     when :anthropic
       Canary::Providers::Anthropic.new(max_tokens: SWEEP_MAX_TOKENS)
     when :openrouter, :fireworks
-      extra_body_by_model = models.to_h { |model| [model, THINKING_EFFORT.fetch(model, {})] }
+      extra_body_by_model = models.to_h { |model| [model, extra_body_for(model)] }
       Canary::Providers::OpenAICompat.new(
         base_url: PROVIDER_BASE_URLS.fetch(kind), api_key: ENV.fetch(PROVIDER_ENV_KEYS.fetch(kind)),
         max_tokens: SWEEP_MAX_TOKENS, extra_body_by_model: extra_body_by_model
@@ -248,6 +268,20 @@ module EvalSweep
     else
       raise ArgumentError, "unknown provider kind: #{kind.inspect}"
     end
+  end
+
+  # THINKING_EFFORT's reasoning/reasoning_effort key and PROVIDER_PINS'
+  # provider key never collide (disjoint top-level keys), so a shallow
+  # merge suffices - no deep-merge helper needed for two flat fragments.
+  def self.extra_body_for(model)
+    THINKING_EFFORT.fetch(model, {}).merge(provider_pin_fragment(model))
+  end
+
+  def self.provider_pin_fragment(model)
+    tag = PROVIDER_PINS[model]
+    return {} unless tag
+
+    {provider: {order: [tag], allow_fallbacks: false}}
   end
 
   # One fresh directory per run, so a rerun supersedes rather than
@@ -370,6 +404,13 @@ module EvalSweep
   # AC4 (I21 F3 correction): summary.md carries the same actual-spend figure
   # and cap-derivation lines the runner already prints to stdout, so a gate
   # can point at the artifact rather than a run's own terminal output.
+  #
+  # I26 (R11(b) ruling): a model/mode section pools authored and sourced
+  # tasks into one pass rate no longer - each section splits into an
+  # authored sub-report and a sourced sub-report, provenance looked up per
+  # record from Canary::TaskRepo.all by task_name. A task_name absent from
+  # the repo raises (Hash#fetch) rather than silently falling into either
+  # bucket.
   def self.write_summary(records, run_dir, cap_lines)
     lines = ["# Canary eval sweep", ""]
     lines << format("actual spend (from recorded token usage x price table): $%.4f", total_spend(records))
@@ -377,8 +418,9 @@ module EvalSweep
     lines << "spend guard cap derivation:"
     lines.concat(cap_lines)
     lines << ""
+    provenance_by_task = Canary::TaskRepo.all.to_h { |entry| [entry.name, entry.provenance] }
     records.group_by { |record| [record.model, record.render_mode] }.sort.each do |(model, mode), arm_records|
-      lines.concat(arm_section(model, mode, arm_records))
+      lines.concat(arm_section(model, mode, arm_records, provenance_by_task))
     end
 
     path = File.join(run_dir, "summary.md")
@@ -387,17 +429,26 @@ module EvalSweep
     path
   end
 
-  def self.arm_section(model, mode, arm_records)
-    k = arm_records.group_by(&:task_name).values.map(&:size).max
-    report = Canary::Eval::Report.new(arm_records)
-
+  def self.arm_section(model, mode, arm_records, provenance_by_task)
     lines = ["## #{model} / #{mode}", ""]
+    %w[authored sourced].each do |provenance|
+      provenance_records = arm_records.select { |record| provenance_by_task.fetch(record.task_name) == provenance }
+      lines.concat(provenance_section(provenance, provenance_records))
+    end
+    lines
+  end
+
+  def self.provenance_section(provenance, provenance_records)
+    k = provenance_records.group_by(&:task_name).values.map(&:size).max
+    report = Canary::Eval::Report.new(provenance_records)
+
+    lines = ["### #{provenance}", ""]
     lines << "- scored: #{report.scored_count}, non_score: #{report.non_score_count}"
     lines << "- non_scores_by_reason: #{report.non_scores_by_reason}"
     lines << "- pass_at_1: #{report.pass_at_1.inspect} (tasks_counted: #{report.tasks_counted(1)})"
     lines << "- pass_at_#{k}: #{report.pass_at_k(k).inspect} (tasks_counted: #{report.tasks_counted(k)})" if k && k > 1
     lines << ""
-    lines.concat(task_table(arm_records))
+    lines.concat(task_table(provenance_records))
     lines << ""
   end
 

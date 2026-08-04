@@ -168,11 +168,14 @@ class EvalSweepTest < Minitest::Test
   end
 
   # AC4 / I21 F3 correction: summary.md itself must carry actual spend and
-  # the full cap-derivation lines, not just the runner's stdout.
+  # the full cap-derivation lines, not just the runner's stdout. Uses a real
+  # TaskRepo task name (an authored one) rather than a fabricated "t1" -
+  # write_summary looks provenance up from Canary::TaskRepo.all by
+  # task_name and raises on a name the repo doesn't know.
   def test_write_summary_includes_actual_spend_and_the_cap_derivation
     records = [
       Canary::Eval::Record.new(
-        schema_version: 1, task_name: "t1", model: "claude-haiku-4-5-20251001", sample_index: 0,
+        schema_version: 1, task_name: "block_memoizer", model: "claude-haiku-4-5-20251001", sample_index: 0,
         render_mode: :hidden, scored: true, passed: true, input_tokens: 100, output_tokens: 200
       )
     ]
@@ -186,6 +189,100 @@ class EvalSweepTest < Minitest::Test
       assert_match(/actual spend \(from recorded token usage x price table\): \$#{Regexp.escape(format("%.4f", expected_spend))}/, summary)
       cap_lines.each { |line| assert_includes summary, line }
       assert_operator cap, :>, 0
+    end
+  end
+
+  # AC1: every :openrouter model's extra body carries exactly one pinned
+  # order entry and allow_fallbacks: false, and it survives alongside
+  # THINKING_EFFORT's reasoning fragment where one exists (the two never
+  # collide - disjoint top-level keys).
+  def test_every_openrouter_model_has_a_provider_pin
+    EvalSweep::MODEL_PROVIDERS.select { |_model, kind| kind == :openrouter }.each_key do |model|
+      assert EvalSweep::PROVIDER_PINS.key?(model), "#{model} has no provider pin"
+    end
+  end
+
+  def test_provider_pins_cover_only_openrouter_models
+    EvalSweep::PROVIDER_PINS.each_key do |model|
+      assert_equal :openrouter, EvalSweep::MODEL_PROVIDERS.fetch(model)
+    end
+  end
+
+  def test_extra_body_for_a_pinned_model_carries_exactly_one_order_entry_and_no_fallbacks
+    EvalSweep::PROVIDER_PINS.each do |model, tag|
+      assert_equal({order: [tag], allow_fallbacks: false}, EvalSweep.extra_body_for(model)[:provider])
+    end
+  end
+
+  def test_extra_body_for_a_pinned_model_still_carries_its_thinking_effort
+    body = EvalSweep.extra_body_for("deepseek/deepseek-v4-flash")
+
+    assert_equal({effort: "low"}, body[:reasoning])
+    assert_equal({order: ["alibaba/fp8"], allow_fallbacks: false}, body[:provider])
+  end
+
+  def test_extra_body_for_a_pinned_model_with_no_thinking_effort_carries_only_the_pin
+    body = EvalSweep.extra_body_for("qwen/qwen3-coder-plus")
+
+    refute body.key?(:reasoning)
+    assert_equal({order: ["alibaba/fp8"], allow_fallbacks: false}, body[:provider])
+  end
+
+  # No :anthropic or :fireworks model carries a provider key - anthropic
+  # models never pass through extra_body_for at all (build_provider's
+  # :anthropic branch), and the Fireworks-direct model is deliberately
+  # absent from PROVIDER_PINS since it hits a different API entirely.
+  def test_no_non_openrouter_model_carries_a_provider_key
+    (EvalSweep::MODEL_PROVIDERS.keys - EvalSweep::PROVIDER_PINS.keys).each do |model|
+      refute EvalSweep.extra_body_for(model).key?(:provider), "#{model} unexpectedly carries a provider key"
+    end
+  end
+
+  # AC3 / R11(b): a model/mode section splits into an authored sub-report
+  # and a sourced sub-report, each with its own pass_at_1/tasks_counted -
+  # proven here by checking neither sub-report's tasks_counted pools the
+  # other's task into its own denominator.
+  def test_write_summary_partitions_authored_and_sourced_sub_reports_with_no_pooled_rate
+    authored_task = Canary::TaskRepo.all.find { |entry| entry.provenance == "authored" }.name
+    sourced_task = Canary::TaskRepo.all.find { |entry| entry.provenance == "sourced" }.name
+    records = [
+      Canary::Eval::Record.new(
+        schema_version: 1, task_name: authored_task, model: "claude-haiku-4-5-20251001", sample_index: 0,
+        render_mode: :hidden, scored: true, passed: true, input_tokens: 10, output_tokens: 10
+      ),
+      Canary::Eval::Record.new(
+        schema_version: 1, task_name: sourced_task, model: "claude-haiku-4-5-20251001", sample_index: 0,
+        render_mode: :hidden, scored: true, passed: false, input_tokens: 10, output_tokens: 10
+      )
+    ]
+    _cap, cap_lines = EvalSweep.spend_cap_derivation(tasks_count: 2)
+
+    Dir.mktmpdir do |run_dir|
+      path = EvalSweep.write_summary(records, run_dir, cap_lines)
+      summary = File.read(path)
+
+      assert_includes summary, "### authored"
+      assert_includes summary, "### sourced"
+      assert_includes summary, "| #{authored_task} |"
+      assert_includes summary, "| #{sourced_task} |"
+      assert_equal 2, summary.scan("(tasks_counted: 1)").size
+      refute_includes summary, "(tasks_counted: 2)"
+    end
+  end
+
+  # AC3: a record naming a task the repo doesn't carry fails loudly rather
+  # than pooling silently into either sub-report.
+  def test_write_summary_raises_on_a_record_with_an_unknown_task_name
+    records = [
+      Canary::Eval::Record.new(
+        schema_version: 1, task_name: "not-a-real-task", model: "claude-haiku-4-5-20251001", sample_index: 0,
+        render_mode: :hidden, scored: true, passed: true, input_tokens: 10, output_tokens: 10
+      )
+    ]
+    _cap, cap_lines = EvalSweep.spend_cap_derivation(tasks_count: 1)
+
+    Dir.mktmpdir do |run_dir|
+      assert_raises(KeyError) { EvalSweep.write_summary(records, run_dir, cap_lines) }
     end
   end
 end
