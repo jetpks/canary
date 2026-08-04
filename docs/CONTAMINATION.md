@@ -6,7 +6,8 @@ every claim below names the file or artifact it's checked against.
 
 ## Provenance
 
-All 13 tasks in `tasks/**` are **authored**, not sourced from any public
+Every task in `tasks/**` (`Canary::TaskRepo.all.size` is the current count)
+is **authored**, not sourced from any public
 corpus. This is the strongest true contamination claim this project can
 make, and it's worth stating plainly rather than dressing it up: every
 task's natural-language statement, its reference solution, its
@@ -29,7 +30,7 @@ or adapts code from another repository.
 time: `Canary::TaskRepo#load_task` raises `ArgumentError` for a `sourced` task
 with a blank attestation, for every caller that loads the corpus, not just a
 test that happens to check it. Today this is inert — there are no sourced
-tasks — but the point isn't today's 13 tasks. It's that the corpus cannot
+tasks — but the point isn't today's task count. It's that the corpus cannot
 grow a sourced task later without someone stating, in writing, what training
 cutoff that task is claimed to postdate. An authored-only corpus makes no
 claims that need checking here; a sourced one would, and now can't skip that
@@ -80,7 +81,7 @@ different, non-interchangeable answers depending on what's being asked.
 
 **External repositories fed to a model to help build this corpus: nothing
 yet.** No external codebase's content was given to a model as raw material
-for authoring these 13 tasks. The corpus's git history (`lane corpus:
+for authoring the tasks in `tasks/**`. The corpus's git history (`lane corpus:
 integrate` commits) shows tasks being authored directly, not derived from
 another repository's content run through a model first.
 
@@ -116,7 +117,7 @@ to this list; the fact above predates it.
 
 **Claimed:**
 
-- These 13 tasks' specific text — statement, solutions, graders,
+- These tasks' specific text — statement, solutions, graders,
   misconceptions — was written for this project, not copied from an
   existing published source (Provenance).
 - Hidden-mode prompts structurally cannot contain the grader, a
@@ -147,7 +148,7 @@ to this list; the fact above predates it.
   by this lane and is not asserted either way.
 
 Given all of that, the strongest defensible claim this project can make is:
-**these 13 tasks' specific text was not copied from an existing published
+**these tasks' specific text was not copied from an existing published
 source, and the harness withholds the grader and misconception catalogue
 from the model at sample time.** Not that the underlying tasks are
 conceptually novel. Not that no model has ever seen anything resembling

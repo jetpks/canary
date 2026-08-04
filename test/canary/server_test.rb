@@ -58,6 +58,49 @@ class ServerTest < Minitest::Test
     end
   end
 
+  # Injects a fixed Verifier::Result directly - AC6's ":invalid" crossing
+  # only holds by construction via the real Pool otherwise, which requires
+  # actual grader tampering to exercise; this drives it directly instead.
+  class StubVerifier
+    def initialize(result)
+      @result = result
+    end
+
+    def call(*, **)
+      @result
+    end
+  end
+
+  # Captures the real solution_path Server handed it, then embeds that path
+  # in the free-text fields (rollout.error, an example's message) AC7 says
+  # must never cross - a direct test of Server's own sanitization, not the
+  # solution_path a real Pool run happens to produce.
+  class PathLeakVerifier
+    attr_reader :captured_path
+
+    def call(task, **)
+      @captured_path = task.solution_path
+      prefilter_report = Canary::Prefilter::Report.new(syntax_valid: true, truncated: false, findings: [])
+      rollout_result = Canary::RolloutResult.new(
+        adapter: :minitest,
+        examples: [Canary::ExampleResult.new(name: "ex", status: "failed", message: "boom near #{task.solution_path}")],
+        passed: 0, failed: 1, total: 1,
+        error: "reading #{task.solution_path} failed", outcome: :error
+      )
+      Canary::Verifier::Result.new(prefilter_report: prefilter_report, rollout_result: rollout_result, passed: false)
+    end
+  end
+
+  class RaisingVerifier
+    def initialize(error)
+      @error = error
+    end
+
+    def call(*, **)
+      raise @error
+    end
+  end
+
   def setup
     @spy = SpyVerifier.new
     @server = Canary::Server.new(verifier: @spy, entries: FIXTURES)
@@ -201,6 +244,47 @@ class ServerTest < Minitest::Test
     assert_equal 2, @spy.calls.last[:timeout]
   end
 
+  def test_a_negative_timeout_is_400_and_never_reaches_the_verifier
+    body = post(task_name: "server_fixture", submission_code: PASSING_SUBMISSION, timeout: -1, expect_status: 400)
+
+    assert_equal 400, @last_status
+    assert_empty @spy.calls
+    assert body.key?("error")
+  end
+
+  def test_a_zero_timeout_is_400_and_never_reaches_the_verifier
+    post(task_name: "server_fixture", submission_code: PASSING_SUBMISSION, timeout: 0, expect_status: 400)
+
+    assert_empty @spy.calls
+  end
+
+  def test_an_infinite_timeout_is_400_and_never_reaches_the_verifier
+    # Standard JSON has no NaN literal, but it does parse an overflowing
+    # exponent straight to Float::INFINITY - a real, wire-representable
+    # non-finite value, unlike NaN which JSON.parse rejects outright.
+    body_string = %({"task_name":"server_fixture","submission_code":#{JSON.generate(PASSING_SUBMISSION)},"timeout":1e400})
+    request = build_request(body_string)
+    response = @server.call(request)
+
+    assert_equal 400, response.status
+    assert_empty @spy.calls
+  end
+
+  # Float::NAN itself can't be carried through a standards-compliant JSON
+  # body (JSON.parse raises on a literal NaN token) - exercised directly
+  # against the guard instead, per AC5's explicit requirement to cover NaN.
+  def test_resolve_timeout_rejects_nan
+    assert_nil @server.send(:resolve_timeout, Float::NAN)
+  end
+
+  def test_a_non_numeric_timeout_is_400_and_never_reaches_the_verifier
+    request = build_request(JSON.generate(task_name: "server_fixture", submission_code: PASSING_SUBMISSION, timeout: "soon"))
+    response = @server.call(request)
+
+    assert_equal 400, response.status
+    assert_empty @spy.calls
+  end
+
   def test_the_default_timeout_is_the_pool_default_when_omitted
     post(task_name: "server_fixture", submission_code: PASSING_SUBMISSION)
 
@@ -261,6 +345,48 @@ class ServerTest < Minitest::Test
       "expected at most #{concurrency} concurrent rollouts (relay+worker each) alive, saw #{live_during_flight}"
 
     assert_raises(Errno::ECHILD) { Process.wait2(-1, Process::WNOHANG) }
+  end
+
+  def test_an_invalid_rollout_outcome_crosses_as_the_string_invalid
+    prefilter_report = Canary::Prefilter::Report.new(syntax_valid: true, truncated: false, findings: [])
+    rollout_result = Canary::RolloutResult.new(adapter: :minitest, examples: [], passed: 0, failed: 0, total: 0, outcome: :invalid)
+    result = Canary::Verifier::Result.new(prefilter_report: prefilter_report, rollout_result: rollout_result, passed: false)
+    server = Canary::Server.new(verifier: StubVerifier.new(result), entries: FIXTURES)
+
+    request = build_request(JSON.generate(task_name: "server_fixture", submission_code: PASSING_SUBMISSION))
+    response = server.call(request)
+    body = JSON.parse(response.read)
+
+    assert_equal 200, response.status
+    assert_equal "invalid", body["outcome"]
+    refute body["passed"]
+    assert_equal "invalid", body["rollout"]["outcome"]
+  end
+
+  def test_a_rollout_error_and_example_message_never_carry_the_real_tempfile_path
+    verifier = PathLeakVerifier.new
+    server = Canary::Server.new(verifier: verifier, entries: FIXTURES)
+
+    request = build_request(JSON.generate(task_name: "server_fixture", submission_code: PASSING_SUBMISSION))
+    response = server.call(request)
+    raw_body = response.read
+
+    refute_nil verifier.captured_path
+    refute_includes raw_body, verifier.captured_path
+  end
+
+  def test_an_unexpected_exception_is_500_without_leaking_message_class_or_path
+    error = RuntimeError.new("distinctive failure detail at /some/leaked/path.rb")
+    server = Canary::Server.new(verifier: RaisingVerifier.new(error), entries: FIXTURES)
+
+    request = build_request(JSON.generate(task_name: "server_fixture", submission_code: PASSING_SUBMISSION))
+    response = server.call(request)
+    body = response.read
+
+    assert_equal 500, response.status
+    refute_includes body, "distinctive failure detail"
+    refute_includes body, "RuntimeError"
+    refute_includes body, "/some/leaked/path.rb"
   end
 
   private

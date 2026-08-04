@@ -1,4 +1,5 @@
 require "test_helper"
+require "tmpdir"
 require_relative "../../../bin/eval_sweep"
 
 # Proves bin/eval_sweep.rb's results/ layout offline, without CANARY_LIVE or
@@ -96,5 +97,27 @@ class EvalSweepTest < Minitest::Test
 
     assert_operator cap, :>, 0
     assert_equal (EvalSweep::HIDDEN_MODELS + EvalSweep::VISIBLE_MODELS).uniq.size + 2, lines.size
+  end
+
+  # AC4 / I21 F3 correction: summary.md itself must carry actual spend and
+  # the full cap-derivation lines, not just the runner's stdout.
+  def test_write_summary_includes_actual_spend_and_the_cap_derivation
+    records = [
+      Canary::Eval::Record.new(
+        schema_version: 1, task_name: "t1", model: "claude-haiku-4-5-20251001", sample_index: 0,
+        render_mode: :hidden, scored: true, passed: true, input_tokens: 100, output_tokens: 200
+      )
+    ]
+    cap, cap_lines = EvalSweep.spend_cap_derivation(tasks_count: 1)
+
+    Dir.mktmpdir do |run_dir|
+      path = EvalSweep.write_summary(records, run_dir, cap_lines)
+      summary = File.read(path)
+
+      expected_spend = EvalSweep.total_spend(records)
+      assert_match(/actual spend \(from recorded token usage x price table\): \$#{Regexp.escape(format("%.4f", expected_spend))}/, summary)
+      cap_lines.each { |line| assert_includes summary, line }
+      assert_operator cap, :>, 0
+    end
   end
 end
