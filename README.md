@@ -100,8 +100,8 @@ solution with the shared grader as `Canary::Task` values that
 
 ## What this is not yet
 
-- **The corpus is small.** `Canary::TaskRepo.all.size` returns 13. It is a
-  hand-authored probe, not a benchmark, and it is not claimed to be
+- **The corpus is small.** `Canary::TaskRepo.all.size` is the current count.
+  It is a hand-authored probe, not a benchmark, and it is not claimed to be
   comprehensive.
 - **The sandbox is not hardened.** Rollouts run in a forked child, not a
   sandboxed or contained one. `test/canary/tamper_test.rb` is an executable

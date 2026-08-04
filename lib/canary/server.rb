@@ -54,11 +54,14 @@ module Canary
       submission_code = body["submission_code"]
       return bad_request("submission_code must be a string") unless submission_code.is_a?(String)
 
-      result = dispatch(entry, submission_code, body)
+      timeout = resolve_timeout(body["timeout"])
+      return bad_request("timeout must be a positive, finite number") unless timeout
 
-      json_response(200, serialize(result, body["request_id"]))
-    rescue StandardError => e
-      ::Protocol::HTTP::Response.for_exception(e)
+      result, tempfile_path = dispatch(entry, submission_code, body, timeout)
+
+      json_response(200, serialize(result, body["request_id"], tempfile_path))
+    rescue StandardError
+      json_response(500, error: "internal error")
     end
 
     def close
@@ -66,9 +69,8 @@ module Canary
 
     private
 
-    def dispatch(entry, submission_code, body)
+    def dispatch(entry, submission_code, body, timeout)
       coverage = body.fetch("coverage", true)
-      timeout = clamp_timeout(body["timeout"])
 
       @semaphore.acquire do
         Tempfile.create(["canary_server_", ".rb"]) do |file|
@@ -76,7 +78,7 @@ module Canary
           file.flush
 
           task = Task.new(solution_path: file.path, test_path: entry.reference.test_path, adapter: entry.adapter)
-          @verifier.call(task, coverage: coverage, timeout: timeout)
+          [@verifier.call(task, coverage: coverage, timeout: timeout), file.path]
         end
       end
     end
@@ -87,8 +89,16 @@ module Canary
       nil
     end
 
-    def clamp_timeout(requested)
-      return Pool::DEFAULT_TIMEOUT unless requested.is_a?(Numeric)
+    # Absent -> the pool's own default (unchanged); present and a positive,
+    # finite Numeric -> clamped to MAX_TIMEOUT (unchanged); anything else
+    # (negative, zero, NaN, non-Numeric) -> nil, which #call turns into a
+    # 400 before the verifier ever sees it. NaN fails both #finite? and
+    # #positive? (verified live: Float::NAN <= x is false for every x, so a
+    # bare range check can't be trusted to catch it - #finite?/#positive?
+    # are the explicit checks that do).
+    def resolve_timeout(requested)
+      return Pool::DEFAULT_TIMEOUT if requested.nil?
+      return nil unless requested.is_a?(Numeric) && requested.finite? && requested.positive?
 
       [requested, MAX_TIMEOUT].min
     end
@@ -107,12 +117,12 @@ module Canary
     # rollout at all, which :ok/:error/:crash/:timeout/:invalid has no
     # member for - so it gets its own, distinct :prefiltered value here
     # rather than overloading one of the rollout's own terminal states.
-    def serialize(result, request_id)
+    def serialize(result, request_id, tempfile_path)
       {
         outcome: result.rollout_result ? result.rollout_result.outcome : :prefiltered,
         passed: result.passed,
         prefilter: serialize_prefilter(result.prefilter_report),
-        rollout: result.rollout_result && serialize_rollout(result.rollout_result),
+        rollout: result.rollout_result && serialize_rollout(result.rollout_result, tempfile_path),
         request_id: request_id
       }
     end
@@ -147,22 +157,31 @@ module Canary
       match ? "submission.rb:#{match[1]}:#{match[2]}" : "submission.rb"
     end
 
+    # rollout.error and an example's message are free text - unlike a
+    # Finding's location, there's no fixed suffix shape to match, so this
+    # scrubs the one tempfile path the server itself knows it handed to the
+    # child rather than any path-shaped pattern (a submission's own text may
+    # legitimately look like a path).
+    def sanitize_text(text, tempfile_path)
+      text&.gsub(tempfile_path, "submission.rb")
+    end
+
     # #coverage and #adapter never cross (a coverage map is a free
     # tampering guide; adapter is a harness detail), whatever the request's
     # own +coverage+ flag asked the pool to compute.
-    def serialize_rollout(rollout)
+    def serialize_rollout(rollout, tempfile_path)
       {
         outcome: rollout.outcome,
         passed: rollout.passed,
         failed: rollout.failed,
         total: rollout.total,
-        error: rollout.error,
-        examples: rollout.examples.map { |example| serialize_example(example) }
+        error: sanitize_text(rollout.error, tempfile_path),
+        examples: rollout.examples.map { |example| serialize_example(example, tempfile_path) }
       }
     end
 
-    def serialize_example(example)
-      { name: example.name, status: example.status, message: example.message }
+    def serialize_example(example, tempfile_path)
+      { name: example.name, status: example.status, message: sanitize_text(example.message, tempfile_path) }
     end
   end
 end

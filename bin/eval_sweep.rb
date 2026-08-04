@@ -305,7 +305,7 @@ module EvalSweep
 
     records = hidden + visible
     report_spend(records)
-    write_summary(records, run_dir)
+    write_summary(records, run_dir, cap_lines)
     puts "wrote #{records.size} records to #{records_path}"
     puts "wrote completions to #{completions_path}"
     records_path
@@ -330,15 +330,26 @@ module EvalSweep
     (record.input_tokens * rate[:input_token_price]) + (record.output_tokens * rate[:output_token_price])
   end
 
-  def self.report_spend(records)
-    spend = records.sum { |record| record_cost(record) }
-    tripped = records.any? { |record| record.non_score_reason == :spend_exceeded }
-    puts "spend guard tripped: #{tripped}"
-    puts format("actual spend (from recorded token usage x price table): $%.4f", spend)
+  def self.total_spend(records)
+    records.sum { |record| record_cost(record) }
   end
 
-  def self.write_summary(records, run_dir)
+  def self.report_spend(records)
+    tripped = records.any? { |record| record.non_score_reason == :spend_exceeded }
+    puts "spend guard tripped: #{tripped}"
+    puts format("actual spend (from recorded token usage x price table): $%.4f", total_spend(records))
+  end
+
+  # AC4 (I21 F3 correction): summary.md carries the same actual-spend figure
+  # and cap-derivation lines the runner already prints to stdout, so a gate
+  # can point at the artifact rather than a run's own terminal output.
+  def self.write_summary(records, run_dir, cap_lines)
     lines = ["# Canary eval sweep", ""]
+    lines << format("actual spend (from recorded token usage x price table): $%.4f", total_spend(records))
+    lines << ""
+    lines << "spend guard cap derivation:"
+    lines.concat(cap_lines)
+    lines << ""
     records.group_by { |record| [record.model, record.render_mode] }.sort.each do |(model, mode), arm_records|
       lines.concat(arm_section(model, mode, arm_records))
     end
