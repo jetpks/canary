@@ -428,11 +428,26 @@ module EvalSweep
   # split is invisible to the caller (still one flat Array of Records
   # back), and a single-provider model set (today's config) collapses to
   # exactly the one runner.call the pre-multi-provider code made.
+  #
+  # I28: the studio gateway 502s (upstream EOFError) on any second
+  # provider call issued while another is in flight - every serially-
+  # issued request succeeded. :studio therefore runs its Runner at
+  # concurrency: 1 (Runner's own Async::Semaphore already enforces "one
+  # job's provider call at a time" at that bound - no new mechanism
+  # needed here). Every other provider kind keeps Runner's own
+  # DEFAULT_CONCURRENCY fan-out, unchanged.
   def self.run_arm(samplers:, tasks:, models:, k:, grader:, &on_record)
     models.group_by { |model| MODEL_PROVIDERS.fetch(model) }.flat_map do |kind, models_for_kind|
-      runner = Canary::Eval::Runner.new(sampler: samplers.fetch(kind))
+      runner = Canary::Eval::Runner.new(sampler: samplers.fetch(kind), concurrency: runner_concurrency(kind))
       runner.call(entries: tasks, models: models_for_kind, k: k, grader: grader, &on_record)
     end
+  end
+
+  # :studio is the one provider kind whose gateway cannot tolerate
+  # overlapping requests (see run_arm) - every hosted kind keeps Runner's
+  # own default fan-out.
+  def self.runner_concurrency(kind)
+    kind == :studio ? 1 : Canary::Eval::Runner::DEFAULT_CONCURRENCY
   end
 
   def self.record_cost(record)
