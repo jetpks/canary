@@ -1,5 +1,7 @@
 require "test_helper"
 require "tmpdir"
+require "async"
+require "tempfile"
 require_relative "../../../bin/eval_sweep"
 
 # Proves bin/eval_sweep.rb's results/ layout offline, without CANARY_LIVE or
@@ -396,5 +398,82 @@ class EvalSweepTest < Minitest::Test
     Dir.mktmpdir do |run_dir|
       assert_raises(KeyError) { EvalSweep.write_summary(records, run_dir, cap_lines) }
     end
+  end
+
+  # I28 AC1: the studio gateway 502s on any second provider call issued
+  # while another is in flight - run_arm's :studio branch must therefore
+  # never let two of its provider calls overlap. Driven through run_arm
+  # itself (the same code path EvalSweep.run uses), against a fake
+  # provider that records the live in-flight count on every call.
+  def test_run_arm_never_overlaps_provider_calls_for_a_studio_model
+    concurrent = 0
+    max_concurrent = 0
+    fake = Canary::Providers::Fake.new do |model:, prompt:|
+      concurrent += 1
+      max_concurrent = concurrent if concurrent > max_concurrent
+      Async::Task.current.sleep(0.01)
+      concurrent -= 1
+      Dry::Monads::Success(Canary::Providers::Sample.new(text: VALID_CODE_RESPONSE, raw: {usage: {input_tokens: 1, output_tokens: 1}}, stop_reason: :end_turn))
+    end
+    model = EvalSweep::STUDIO_MODELS.first
+
+    records = EvalSweep.run_arm(samplers: {studio: build_fake_sampler(fake)}, tasks: [build_fixture_entry], models: [model], k: 5, grader: false)
+
+    assert_equal 5, records.size
+    assert_equal 1, max_concurrent, "expected no overlap for a :studio model, saw #{max_concurrent} calls in flight at once"
+  end
+
+  # I28 AC2: hosted provider kinds must keep their existing fan-out
+  # unchanged - proven here (not assumed) by the same overlap-recording
+  # fake, this time genuinely overlapping under run_arm's default
+  # concurrency for a hosted (:anthropic) model.
+  def test_run_arm_keeps_the_default_fan_out_for_a_hosted_model
+    concurrent = 0
+    max_concurrent = 0
+    fake = Canary::Providers::Fake.new do |model:, prompt:|
+      concurrent += 1
+      max_concurrent = concurrent if concurrent > max_concurrent
+      Async::Task.current.sleep(0.01)
+      concurrent -= 1
+      Dry::Monads::Success(Canary::Providers::Sample.new(text: VALID_CODE_RESPONSE, raw: {usage: {input_tokens: 1, output_tokens: 1}}, stop_reason: :end_turn))
+    end
+    model = "claude-haiku-4-5-20251001"
+
+    records = EvalSweep.run_arm(samplers: {anthropic: build_fake_sampler(fake)}, tasks: [build_fixture_entry], models: [model], k: 10, grader: false)
+
+    assert_equal 10, records.size
+    assert_operator max_concurrent, :>, 1, "expected genuine overlap for a hosted model, fan-out regressed to serial"
+    assert_operator max_concurrent, :<=, Canary::Eval::Runner::DEFAULT_CONCURRENCY
+  end
+
+  # I28: runner_concurrency itself - :studio pins to 1, every other kind
+  # keeps Runner's own default.
+  def test_runner_concurrency_pins_studio_to_one_and_leaves_other_kinds_at_the_default
+    assert_equal 1, EvalSweep.runner_concurrency(:studio)
+    assert_equal Canary::Eval::Runner::DEFAULT_CONCURRENCY, EvalSweep.runner_concurrency(:anthropic)
+    assert_equal Canary::Eval::Runner::DEFAULT_CONCURRENCY, EvalSweep.runner_concurrency(:openrouter)
+    assert_equal Canary::Eval::Runner::DEFAULT_CONCURRENCY, EvalSweep.runner_concurrency(:fireworks)
+  end
+
+  private
+
+  VALID_CODE_RESPONSE = "Here you go:\n\n```ruby\nclass Adder\n  def self.call(a, b)\n    a + b\n  end\nend\n```\n"
+  FIXTURES = File.expand_path("fixtures/task", __dir__)
+
+  def build_fake_sampler(provider, max_samples: 20)
+    Canary::Sampler.new(
+      provider: provider,
+      budget: Canary::Sampler::Budget.new(max_samples: max_samples),
+      record_sink: Canary::Sampler::RecordSink.new(path: Tempfile.new(%w[eval_sweep_test_records .jsonl]).path)
+    )
+  end
+
+  def build_fixture_entry
+    Canary::TaskRepo::Entry.new(
+      name: "eval_fixture_task",
+      statement: "Implement Adder.call(a, b), returning their sum.",
+      adapter: :minitest,
+      reference: Canary::Task.new(solution_path: File.join(FIXTURES, "solution.rb"), test_path: File.join(FIXTURES, "grader.rb"), adapter: :minitest)
+    )
   end
 end
