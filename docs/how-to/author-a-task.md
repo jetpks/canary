@@ -6,29 +6,33 @@ real `tasks/struct_vector/` task as the worked example.
 
 ## Directory shape
 
-    tasks/<your_task_name>/
-      meta.yml
-      solution.rb
-      grader.rb
-      broken/
-        <id_1>.rb
-        <id_2>.rb
-        ...
-        mechanism_free.rb
+```text
+tasks/<your_task_name>/
+  meta.yml
+  solution.rb
+  grader.rb
+  broken/
+    <id_1>.rb
+    <id_2>.rb
+    ...
+    mechanism_free.rb
+```
 
 ## `meta.yml`
 
-    category: Struct / Data value semantics and equality
-    adapter: minitest
-    provenance: authored
-    statement: "Implement Vector(x:, y:) as a Struct-based value object with #+ that returns a new Vector whose x and y are the componentwise sums of the operands' x and y - e.g. Vector.new(x: 1, y: 2) + Vector.new(x: 3, y: 4) equals Vector.new(x: 4, y: 6). Neither operand may be modified by the call: after a + b, a and b must still equal their original values. Two Vectors with equal x and y compare as == (without being the same object), and #to_h reflects x and y."
-    broken:
-      - id: mutates_operands
-        misconception: "+ mutates and returns self instead of returning a new Vector, so the operands change under the caller's feet."
-      - id: transposed_addition
-        misconception: "+ subtracts instead of adds - a copy-paste/sign transposition bug that still returns a fresh, non-mutating Vector."
-      - id: mechanism_free
-        misconception: "+ mutates and returns self instead of returning a new Vector - the simplest implementation that reads correctly for the addition example alone - same misconception as mutates_operands."
+```yaml
+category: Struct / Data value semantics and equality
+adapter: minitest
+provenance: authored
+statement: "Implement Vector(x:, y:) as a Struct-based value object with #+ that returns a new Vector whose x and y are the componentwise sums of the operands' x and y - e.g. Vector.new(x: 1, y: 2) + Vector.new(x: 3, y: 4) equals Vector.new(x: 4, y: 6). Neither operand may be modified by the call: after a + b, a and b must still equal their original values. Two Vectors with equal x and y compare as == (without being the same object), and #to_h reflects x and y."
+broken:
+  - id: mutates_operands
+    misconception: "+ mutates and returns self instead of returning a new Vector, so the operands change under the caller's feet."
+  - id: transposed_addition
+    misconception: "+ subtracts instead of adds - a copy-paste/sign transposition bug that still returns a fresh, non-mutating Vector."
+  - id: mechanism_free
+    misconception: "+ mutates and returns self instead of returning a new Vector - the simplest implementation that reads correctly for the addition example alone - same misconception as mutates_operands."
+```
 
 Required keys (`Canary::TaskRepo#load_task` raises on a missing one via
 `Hash#fetch`, except where noted):
@@ -46,11 +50,13 @@ Required keys (`Canary::TaskRepo#load_task` raises on a missing one via
 
 The reference implementation. Must pass `grader.rb` cleanly.
 
-    Vector = Struct.new(:x, :y, keyword_init: true) do
-      def +(other)
-        Vector.new(x: x + other.x, y: y + other.y)
-      end
-    end
+```ruby
+Vector = Struct.new(:x, :y, keyword_init: true) do
+  def +(other)
+    Vector.new(x: x + other.x, y: y + other.y)
+  end
+end
+```
 
 ## `grader.rb`
 
@@ -59,21 +65,23 @@ The test file — minitest or rspec, matching `adapter` — that scores both
 except in diagnostic grader-visible mode (`Canary::Prompt.render(entry,
 grader: true)`), which real sweeps don't use.
 
-    class VectorGraderTest < Minitest::Test
-      def test_adds_two_vectors_componentwise
-        result = Vector.new(x: 1, y: 2) + Vector.new(x: 3, y: 4)
-        assert_equal Vector.new(x: 4, y: 6), result
-      end
+```ruby
+class VectorGraderTest < Minitest::Test
+  def test_adds_two_vectors_componentwise
+    result = Vector.new(x: 1, y: 2) + Vector.new(x: 3, y: 4)
+    assert_equal Vector.new(x: 4, y: 6), result
+  end
 
-      def test_addition_does_not_mutate_either_operand
-        a = Vector.new(x: 1, y: 2)
-        b = Vector.new(x: 3, y: 4)
-        _ = a + b
-        assert_equal Vector.new(x: 1, y: 2), a
-        assert_equal Vector.new(x: 3, y: 4), b
-      end
-      # ...
-    end
+  def test_addition_does_not_mutate_either_operand
+    a = Vector.new(x: 1, y: 2)
+    b = Vector.new(x: 3, y: 4)
+    _ = a + b
+    assert_equal Vector.new(x: 1, y: 2), a
+    assert_equal Vector.new(x: 3, y: 4), b
+  end
+  # ...
+end
+```
 
 ## `broken/<id>.rb` — one per named misconception, plus `mechanism_free.rb`
 
@@ -97,13 +105,15 @@ test suite enforces on every task in the corpus
 
 Example (`tasks/struct_vector/broken/mechanism_free.rb`):
 
-    Vector = Struct.new(:x, :y, keyword_init: true) do
-      def +(other)
-        self.x += other.x
-        self.y += other.y
-        self
-      end
-    end
+```ruby
+Vector = Struct.new(:x, :y, keyword_init: true) do
+  def +(other)
+    self.x += other.x
+    self.y += other.y
+    self
+  end
+end
+```
 
 ## Statement discipline
 
@@ -134,16 +144,20 @@ place task-authoring precision matters:
 
 ## Verify it
 
-    bundle exec ruby -Ilib -Itest test/canary/task_repo_test.rb
+```console
+bundle exec ruby -Ilib -Itest test/canary/task_repo_test.rb
+```
 
 This is the same file the whole corpus runs through — it proves every
 task's reference solution passes, every broken solution fails and
 discriminates, and every task carries a valid `mechanism_free.rb`. Observed
 output against the current corpus:
 
-    Finished in 7.533673s, 3.0530 runs/s, 72.4746 assertions/s.
+```console
+Finished in 7.533673s, 3.0530 runs/s, 72.4746 assertions/s.
 
-    23 runs, 546 assertions, 0 failures, 0 errors, 0 skips
+23 runs, 546 assertions, 0 failures, 0 errors, 0 skips
+```
 
 Or run the whole suite (`bundle exec rake test`) — a new task directory
 under `tasks/` is picked up automatically by `Canary::TaskRepo.all`, no
