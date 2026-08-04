@@ -120,12 +120,23 @@ module Canary
           output_tokens: sample.raw.dig(:usage, :output_tokens))
       end
 
+      # Cutoff stop reasons a provider evidences when it ran out of budget
+      # mid-generation: Anthropic reports :max_tokens (providers/anthropic.rb),
+      # OpenAICompat normalizes finish_reason "length" to :length
+      # (providers/openai_compat.rb). Only these two make an EOF-anchored
+      # prefilter truncation an honest :truncated - see non_score_reason_for.
+      CUTOFF_STOP_REASONS = %i[max_tokens length].freeze
+
       # A genuine verdict: the extracted code got a real shot at the
       # verifier, whatever it did there. A prefilter reject is scored:
       # true, passed: false - the model's own code falling short - UNLESS
-      # the prefilter rejected it because the generation was cut off
-      # mid-construct (Prefilter::Report#truncated), which is a harness
-      # limitation and a non-score like any other (R3).
+      # the prefilter rejected it because the generation ends mid-construct
+      # (Prefilter::Report#truncated), which is a non-score (R3) rather than
+      # a graded failure. That EOF-anchored parse error is truncation only
+      # when the provider itself evidenced a cutoff (see
+      # non_score_reason_for) - a clean stop_reason means the model finished
+      # on its own and simply wrote code that doesn't parse, so the record
+      # names that distinctly rather than blaming the harness for it.
       def verified_record(job, sample, extracted)
         Tempfile.create(["canary_eval_", ".rb"]) do |file|
           file.write(extracted.code)
@@ -134,7 +145,7 @@ module Canary
           task = Task.new(solution_path: file.path, test_path: job.entry.reference.test_path, adapter: job.entry.adapter)
           result = @verifier.call(task)
 
-          next truncated_record(job, sample, extracted) if result.prefilter_report.truncated
+          next non_score_record(job, sample, extracted, non_score_reason_for(sample)) if result.prefilter_report.truncated
 
           Record.new(**identity_fields(job),
             scored: true,
@@ -152,10 +163,19 @@ module Canary
         end
       end
 
-      def truncated_record(job, sample, extracted)
+      # :truncated only when the sample's own stop_reason evidences a
+      # provider-side cutoff (CUTOFF_STOP_REASONS); any other stop_reason
+      # means the model stopped generating on its own and the EOF-anchored
+      # parse error is its own doing, named :premature_stop rather than
+      # folded into a harness limitation it isn't.
+      def non_score_reason_for(sample)
+        CUTOFF_STOP_REASONS.include?(sample.stop_reason) ? :truncated : :premature_stop
+      end
+
+      def non_score_record(job, sample, extracted, reason)
         Record.new(**identity_fields(job),
           scored: false,
-          non_score_reason: :truncated,
+          non_score_reason: reason,
           passed: nil,
           prefilter_clean: false,
           extractor_outcome: extracted.outcome,
