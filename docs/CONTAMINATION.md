@@ -101,14 +101,19 @@ this project no longer controls what happens to that content afterward —
 whether it's retained, logged, reviewed, or folded into a future training
 run is governed by the provider's data-usage terms, not by anything in this
 codebase. `lib/canary/providers/anthropic.rb` makes a plain
-`@client.messages.create` call with no data-usage opt-out configured. This
-does not retroactively contaminate today's scores against
+`@client.messages.create` call with no data-usage opt-out configured, and
+`lib/canary/providers/openai_compat.rb` (routing to OpenRouter and
+Fireworks in `bin/eval_sweep.rb`'s configured model set) offers no opt-out
+either. This does not retroactively contaminate I15's scores against
 `claude-haiku-4-5-20251001`/`claude-sonnet-5` — those models' training
 predates this corpus's existence by construction, since it was authored
-after they shipped. But it does mean this exact 13-task corpus, having
-already been sent to Anthropic's inference endpoint at least once, cannot be
-treated as guaranteed-unseen by Anthropic infrastructure for any future
-evaluation of a model trained after today.
+after they shipped. But the picture is broader than that one run now: every
+task's hidden-mode statement — and, for the Anthropic anchors, the
+visible arm's full graders too — has crossed commercial inference
+endpoints in every sweep committed under `results/` since, not just I15's.
+This corpus cannot be treated as guaranteed-unseen by any of those
+providers' infrastructure for a model trained after the dates those runs
+happened.
 
 This lane itself made zero live calls (see its `run.jsonl`) and adds nothing
 to this list; the fact above predates it.
