@@ -1,7 +1,14 @@
 # canary
 
-A Ruby coding evaluation and RL environment. **Status: incubating** — the
-corpus, the eval pipeline, and the wire protocol are all still in active
+| | |
+|---|---|
+| **Status** | incubating |
+| **What** | A Ruby coding evaluation and RL environment |
+| **Ruby** | 4.0.6 (`mise.toml`) |
+| **License** | MIT (`LICENSE`) |
+| **Docs** | [`docs/`](docs/README.md) |
+
+The corpus, the eval pipeline, and the wire protocol are all still in active
 flux. Nothing here is a finished product, and no result in this repo is
 published as a citable benchmark number.
 
@@ -93,13 +100,17 @@ embody one named misconception.
 
 ## Running the test suite
 
-    bundle install
-    bundle exec rake test
+```console
+bundle install
+bundle exec rake test
+```
 
 This runs every `test/**/*_test.rb` file under Minitest (see `Rakefile`). To
 run a single file:
 
-    bundle exec ruby -Ilib -Itest test/canary/pool_failure_test.rb
+```console
+bundle exec ruby -Ilib -Itest test/canary/pool_failure_test.rb
+```
 
 ## Task layout
 
@@ -108,14 +119,16 @@ current count — see "What this is not yet" below), loaded by
 `Canary::TaskRepo` (`lib/canary/task_repo.rb`). For example,
 `tasks/struct_vector/`:
 
-    tasks/struct_vector/
-      meta.yml       # category, adapter, provenance, statement, one entry per broken solution
-      solution.rb    # the reference solution
-      grader.rb      # the test file that grades both solution.rb and each broken/*.rb
-      broken/
-        mutates_operands.rb
-        transposed_addition.rb
-        mechanism_free.rb
+```text
+tasks/struct_vector/
+  meta.yml       # category, adapter, provenance, statement, one entry per broken solution
+  solution.rb    # the reference solution
+  grader.rb      # the test file that grades both solution.rb and each broken/*.rb
+  broken/
+    mutates_operands.rb
+    transposed_addition.rb
+    mechanism_free.rb
+```
 
 `meta.yml` names the adapter (`minitest` or `rspec`), the task's category,
 its provenance (`authored` or `sourced`), its natural-language statement,
