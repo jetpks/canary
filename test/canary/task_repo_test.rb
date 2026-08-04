@@ -243,8 +243,8 @@ class TaskRepoTest < Minitest::Test
     end
   end
 
-  # AC5: I25 added the corpus's first sourced tasks, so the old
-  # entirely-authored snapshot no longer holds. This is the partition
+  # The corpus's first sourced tasks mean the old entirely-authored
+  # snapshot no longer holds. This is the partition
   # invariant that replaces it, in the same dynamic shape as its
   # neighbors above (every entry TaskRepo.all resolves right now, not a
   # hardcoded list): every authored task still carries no attestation,
