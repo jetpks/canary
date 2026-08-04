@@ -1,0 +1,11 @@
+category: "External iteration: peek must not consume, and exhaustion raises StopIteration rather than returning nil"
+adapter: minitest
+provenance: authored
+statement: "Implement TokenStream.new(tokens), constructed from an array of tokens in order. #next returns the next not-yet-consumed token and advances past it; calling #next once every token has been consumed raises StopIteration. #peek returns the same value the next call to #next would return, without consuming it - calling #peek any number of times in a row must keep returning that same value and must not change what #next returns next; calling #peek once every token has been consumed also raises StopIteration. #rewind resets the stream so the next #next call returns the first token again, as if nothing had been consumed."
+broken:
+  - id: peek_consumes
+    misconception: "peek is implemented by calling next and returning its result, so peeking silently advances the stream - two peeks in a row return two different tokens instead of the same one."
+  - id: exhausted_returns_nil
+    misconception: "next and peek return nil once the stream is exhausted instead of raising StopIteration, treating exhaustion like an empty-array read instead of the iterator protocol's own signal."
+  - id: mechanism_free
+    misconception: "wraps a plain Array with shift/first instead of tracking position explicitly, so next and peek behave correctly but rewind has nothing to restore from and cannot be implemented at all."

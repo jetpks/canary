@@ -1,0 +1,11 @@
+category: block/proc/lambda semantics
+adapter: rspec
+provenance: authored
+statement: Implement Memoizer.wrap(&computation), returning a callable that invokes computation at most once no matter how many times the callable itself is called - including when computation returns a falsy value like nil or false - and forwards whatever arguments each call is given through to computation on the one invocation that actually runs it.
+broken:
+  - id: or_equals_recomputes_falsy
+    misconception: "value ||= computation.call(*args) recomputes every time the cached result is falsy, instead of caching it."
+  - id: drops_call_time_args
+    misconception: "computation.call drops the call-time *args entirely instead of forwarding them through."
+  - id: mechanism_free
+    misconception: "value ||= computation.call(*args) - the simplest naive memoizer - recomputes every time the cached result is falsy instead of caching it, same misconception as or_equals_recomputes_falsy."

@@ -1,0 +1,11 @@
+category: Enumerable and lazy evaluation
+adapter: minitest
+provenance: authored
+statement: "Implement SparseArray, a sparse Enumerable collection: []=(index, value) stores value at index, and iterating the collection (each, map, select, sum, count, etc.) yields the stored values in ascending index order - regardless of the order the values were assigned - with no entries for indexes that were never set."
+broken:
+  - id: unsorted_each
+    misconception: "each yields @store's Hash insertion order instead of sorting by index, so ordering is coincidental rather than guaranteed."
+  - id: swapped_key_value
+    misconception: "[]= stores @store[value] = index (arguments swapped), so both the sort key and the yielded content are wrong."
+  - id: mechanism_free
+    misconception: "hand-implements to_a/sum/select/count directly against @store instead of including Enumerable and defining each, so derived methods like first/min_by/reduce are never gained for free."

@@ -1,0 +1,11 @@
+category: "a plain object made usable as a block via &, the same interop point Symbol#to_proc and Method#to_proc share"
+adapter: rspec
+provenance: authored
+statement: "Implement Lookup.new(table), constructed with a single Hash argument mapping input values to output values. #call(key) returns table.fetch(key), raising KeyError for a key with no mapping. Prefixing a Lookup instance with & when passing it where a block is expected (e.g. array.map(&lookup) or array.sort_by(&lookup)) must behave exactly as if a block of { |key| lookup.call(key) } had been given instead, for every element and in the same order the method would normally produce."
+broken:
+  - id: missing_to_proc
+    misconception: "#call works correctly on its own, but nothing makes a Lookup instance usable with &, so array.map(&lookup) raises instead of mapping each element through #call."
+  - id: call_uses_bracket_access
+    misconception: "& interop works correctly, but #call reads table[key] instead of table.fetch(key), so a key with no mapping silently returns nil instead of raising KeyError."
+  - id: mechanism_free
+    misconception: "#call works correctly on its own, but nothing makes a Lookup instance usable with &, so array.map(&lookup) raises instead of mapping each element through #call - same misconception as missing_to_proc."

@@ -1,0 +1,21 @@
+require_relative "canary/version"
+require_relative "canary/rollout_result"
+require_relative "canary/adapters/minitest_adapter"
+require_relative "canary/adapters/rspec_adapter"
+require_relative "canary/pool"
+require_relative "canary/prompt"
+require_relative "canary/extractor"
+require_relative "canary/task"
+require_relative "canary/task_repo"
+require_relative "canary/verifier"
+require_relative "canary/providers/anthropic"
+require_relative "canary/providers/openai_compat"
+require_relative "canary/providers/fake"
+require_relative "canary/sampler"
+require_relative "canary/eval/record"
+require_relative "canary/eval/report"
+require_relative "canary/eval/runner"
+require_relative "canary/server"
+
+module Canary
+end

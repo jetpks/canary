@@ -1,0 +1,11 @@
+category: string and regex handling
+adapter: minitest
+provenance: authored
+statement: 'Implement AttrParser.parse(line), returning a Hash of key.to_sym => value pairs parsed out of zero or more key="value" tokens in line. Each pair''s value is exactly the text between its own opening and closing double-quote - nothing more, nothing less - even when line contains multiple pairs back-to-back (parsing name="ada" role="admin" must not let one pair''s value swallow the next pair''s key or quotes) and even when a value itself contains spaces (msg="hello world" must parse to the full two-word value, not stop at the first space). A line with no key="value" pairs returns an empty Hash.'
+broken:
+  - id: greedy_value_match
+    misconception: "value uses .* (greedy) instead of .*? (lazy), so it crosses quote boundaries between multiple pairs on the same line."
+  - id: excludes_spaces_from_value
+    misconception: "value is narrowed to [^ \"]*? to \"fix\" greediness, which instead makes any value containing a space fail to match at all."
+  - id: mechanism_free
+    misconception: "value uses .* (greedy) instead of .*? (lazy) - the simplest regex that reads correctly for a single pair - so it crosses quote boundaries between multiple pairs on the same line, same misconception as greedy_value_match."

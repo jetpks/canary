@@ -1,0 +1,11 @@
+category: "forwarding args and kwargs together requires re-splatting kwargs with **, not folding them into a positional hash"
+adapter: minitest
+provenance: authored
+statement: "Implement Invoker.call(target, *args, **kwargs, &block). It calls target (any object responding to #call) and returns whatever target returns. Every positional argument, every keyword argument, and the block given to Invoker.call must reach target exactly as given - as the same positional arguments, the same keyword arguments, and the same block target would receive if called directly. This must hold whether Invoker.call is given only positional arguments, only keyword arguments, both, or neither, and whether or not a block is given."
+broken:
+  - id: forwards_kwargs_as_a_positional_hash
+    misconception: "forwards with target.call(*args, kwargs, &block) - kwargs is passed as one more positional argument instead of re-expanded with **, so target receives an extra Hash argument instead of keyword arguments, breaking any target with its own required arity."
+  - id: drops_the_block
+    misconception: "forwards args and kwargs correctly with ** but forwards target.call(*args, **kwargs) without &block, so a target that relies on being passed a block silently never receives one."
+  - id: mechanism_free
+    misconception: "captures only *args and never **kwargs at all, so a call site that passes keyword arguments to Invoker.call sees them folded into args as a trailing positional Hash instead of being kept as keyword arguments to forward."

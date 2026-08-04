@@ -1,0 +1,11 @@
+category: block/proc/lambda semantics
+adapter: minitest
+provenance: authored
+statement: Implement SafeCaller.call(callable, *args, default:). Normally it calls callable with args and returns whatever callable returns. The one exception is when callable is a lambda and the number of arguments given does not match the number it was defined to accept - in that case SafeCaller returns default instead of invoking callable at all. A plain Proc is always invoked with args exactly as given, however many or few, and never triggers the default fallback.
+broken:
+  - id: ignores_lambda_vs_proc
+    misconception: "drops the callable.lambda? guard, so a Proc with a matching arity check gets the default fallback treatment reserved for lambdas."
+  - id: inverted_arity_check
+    misconception: "arity == args.size (inverted from !=): defaults on a matching call and attempts (and crashes) the real call on a mismatch."
+  - id: mechanism_free
+    misconception: "always calls callable directly with args - the simplest solution that never engages the default: fallback at all."

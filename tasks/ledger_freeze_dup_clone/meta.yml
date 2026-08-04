@@ -1,0 +1,11 @@
+category: "freeze is shallow, and dup drops frozen state while clone preserves it"
+adapter: rspec
+provenance: authored
+statement: "Implement Ledger.new(entries = []), constructed from an optional starting array of entries. #add(entry) appends entry and returns the ledger itself. #entries returns the ledger's current entries, in insertion order. #freeze returns the ledger itself, and #frozen? reports true on it afterward. Once #freeze has been called on a ledger, no further entries can be added - not through #add, and not by mutating the array #entries returns - both raise FrozenError. #dup produces a new, independent ledger that is never frozen, regardless of whether the original was frozen, and adding to it never affects the original's entries. #clone produces a copy that stays frozen exactly when the original was frozen."
+broken:
+  - id: no_freeze_cascade
+    misconception: "freeze is left as the default Object#freeze, which only marks the ledger itself frozen - the entries array it holds stays mutable, so #add and direct mutation of #entries keep silently succeeding after #freeze."
+  - id: dup_inherits_frozen_state
+    misconception: "initialize_copy re-freezes the copy whenever the source was frozen, on the mistaken belief that frozen state must be propagated manually for both dup and clone - this makes dup wrongly come back frozen too, when dup must always come back unfrozen regardless of the source."
+  - id: mechanism_free
+    misconception: "freeze is left as the default Object#freeze, which only marks the ledger itself frozen - the entries array it holds stays mutable, so #add and direct mutation of #entries keep silently succeeding after #freeze - same misconception as no_freeze_cascade."

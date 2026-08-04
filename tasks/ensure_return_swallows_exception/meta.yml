@@ -1,0 +1,11 @@
+category: "an ensure block with an explicit return silently swallows the in-flight exception"
+adapter: minitest
+provenance: authored
+statement: Implement TransactionRunner.run(log, &block). It always appends :cleaned_up to log exactly once - whether the block returns normally or raises - and any exception the block raises still propagates out of .run to the caller unchanged; a successful block's return value is returned by .run.
+broken:
+  - id: ensure_returns_and_swallows
+    misconception: "ensure runs cleanup and then has an explicit return, which silently discards any in-flight exception and returns normally instead."
+  - id: cleanup_only_on_success
+    misconception: "cleanup happens as a plain statement after yield instead of in ensure, so it's skipped entirely whenever the block raises."
+  - id: mechanism_free
+    misconception: "cleanup runs as a plain statement after yield instead of in ensure - the simplest solution that reads correctly for the success path alone - same misconception as cleanup_only_on_success."

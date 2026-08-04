@@ -1,0 +1,11 @@
+category: "each with no block returns a drivable, chainable object instead of raising or returning nil"
+adapter: minitest
+provenance: authored
+statement: "Implement Steps.new(from), constructed with a single positive integer. Calling #each with a block yields from, from - 1, from - 2, and so on down to 1, in that order, to the block, and #each returns the Steps instance itself. Calling #each with no block returns an object that can be driven one value at a time by repeatedly calling #next on it - returning from, then from - 1, and so on down to 1, then raising StopIteration on any further call. That same no-block return value also supports #with_index (pairing each value with its zero-based position) and #to_a (collecting every value into an array), both reflecting the identical from, from - 1, ..., 1 sequence."
+broken:
+  - id: no_block_raises
+    misconception: "each always assumes a block is given and yields directly, so calling it with no block raises LocalJumpError instead of returning anything that can be driven with #next, #with_index, or #to_a."
+  - id: block_form_returns_the_loop_value
+    misconception: "each with a block yields every value correctly but returns whatever the underlying downto call returns instead of the Steps instance itself, so the with-block return value is not the same object #each was called on."
+  - id: mechanism_free
+    misconception: "each always assumes a block is given and yields directly, so calling it with no block raises LocalJumpError instead of returning anything that can be driven with #next, #with_index, or #to_a - same misconception as no_block_raises."

@@ -1,0 +1,12 @@
+/.bundle/
+/vendor/bundle/
+# Real credentials. This repo is headed for a public push (main is still the
+# empty initial commit), and lane worktrees inherit this file - so a .env
+# copied into one is ignored there too.
+.env
+.env.*
+!.env.example
+Gemfile.lock.orig
+*.gem
+/bench/mutation/target/.mutant/
+/bench/mutation/target/.mutineer/

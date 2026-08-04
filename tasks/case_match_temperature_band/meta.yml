@@ -1,0 +1,11 @@
+category: "an object driving case/when and grep as the pattern, via its own matching logic rather than the compared value's"
+adapter: rspec
+provenance: authored
+statement: "Implement Band.new(min, max), constructed with two numbers where min is less than max. A Band instance matches a number whenever min <= number and number < max (min inclusive, max exclusive). Using a Band instance as one of the when clauses in a case statement selects that clause exactly when the case's value matches it, checking clauses in the order written and falling through to else when no clause matches. Passing a Band instance to Enumerable#grep on an array of numbers selects exactly the numbers that match it, preserving their original order."
+broken:
+  - id: inclusive_max_boundary
+    misconception: "the match check uses number <= max instead of number < max, so a number exactly equal to a band's max is wrongly treated as inside that band instead of outside it."
+  - id: default_object_match
+    misconception: "no matching logic is defined at all, so case/when and grep fall back to the default Object equality check, which is never true for a Band compared against a plain number - every case falls through to else and grep returns nothing, regardless of the band's min and max."
+  - id: mechanism_free
+    misconception: "no matching logic is defined at all, so case/when and grep fall back to the default Object equality check, which is never true for a Band compared against a plain number - every case falls through to else and grep returns nothing, regardless of the band's min and max - same misconception as default_object_match."
