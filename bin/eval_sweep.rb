@@ -73,6 +73,20 @@ module EvalSweep
   HIDDEN_K = 3
   VISIBLE_K = 1
 
+  # I27 r12-studio-arm: five models behind jetpks/space-inference-gateway on
+  # a Mac Studio, hot-swapped per request's model field - no auth, $0 true
+  # marginal cost (already-owned hardware, no metered API). Every id
+  # verified live against GET https://studio.slush.systems/v1/models by the
+  # architect this session. Deliberately its own list rather than folded
+  # into HIDDEN_MODELS: a bare bin/eval_sweep.rb invocation (no ARGV) must
+  # stay byte-identical to the hosted-only sweep - a studio model only ever
+  # runs when named explicitly via the single-model positional invocation
+  # (see .select_models).
+  STUDIO_MODELS = [
+    "qwen3.6-35b-a3b-4bit", "qwen3.6-35b-a3b-8bit", "qwen3-27b-optiq",
+    "qwen3-122b-a10b", "nemotron-3-super"
+  ].freeze
+
   # Which provider endpoint each configured model routes through. A model
   # missing here is a configuration error (MODEL_PROVIDERS.fetch raises),
   # not a silent default - the two new endpoints are cheap to add a line
@@ -87,19 +101,35 @@ module EvalSweep
     "qwen/qwen3-coder-plus" => :openrouter,
     "qwen/qwen3.7-max" => :openrouter,
     "z-ai/glm-5.2" => :openrouter,
-    "accounts/fireworks/models/deepseek-v4-flash" => :fireworks
+    "accounts/fireworks/models/deepseek-v4-flash" => :fireworks,
+    "qwen3.6-35b-a3b-4bit" => :studio,
+    "qwen3.6-35b-a3b-8bit" => :studio,
+    "qwen3-27b-optiq" => :studio,
+    "qwen3-122b-a10b" => :studio,
+    "nemotron-3-super" => :studio
   }.freeze
 
   PROVIDER_BASE_URLS = {
     openrouter: "https://openrouter.ai/api/v1",
-    fireworks: "https://api.fireworks.ai/inference/v1"
+    fireworks: "https://api.fireworks.ai/inference/v1",
+    studio: "https://studio.slush.systems/v1"
   }.freeze
 
+  # :studio deliberately has no entry here - the gateway takes no real
+  # credential at all (verified live), so .load_env! demands nothing for it
+  # and .build_provider passes STUDIO_API_KEY, a placeholder the gateway
+  # never inspects.
   PROVIDER_ENV_KEYS = {
     anthropic: "ANTHROPIC_API_KEY",
     openrouter: "OPENROUTER_API_KEY",
     fireworks: "FIREWORKS_API_KEY"
   }.freeze
+
+  STUDIO_API_KEY = "studio-gateway-ignores-auth"
+  # A full 16_384-token generation behind a hot model load comfortably clears
+  # OpenAICompat::DEFAULT_READ_TIMEOUT's 60s - this is a generous multiple of
+  # that headroom, not a measured worst case.
+  STUDIO_READ_TIMEOUT = 1800
 
   # $/token. Anthropic prices current as of 2026-08-02 (Haiku 4.5 $1/$5 per
   # MTok in/out; Sonnet 5 $2/$10 through its 2026-08-31 introductory window,
@@ -111,7 +141,9 @@ module EvalSweep
   # this table does not model, matching how the base rate was used for every
   # OpenRouter model in earlier follow-ups). Fireworks (deepseek-v4-flash) is
   # the Standard-tier rate from docs.fireworks.ai/serverless/pricing
-  # (2026-08-03): $0.14/MTok input, $0.28/MTok output.
+  # (2026-08-03): $0.14/MTok input, $0.28/MTok output. STUDIO_MODELS are
+  # $0.00 - local serving on already-owned hardware has no per-token
+  # metering, so their true marginal rate is zero, not merely cheap.
   PRICE_TABLE = {
     "claude-haiku-4-5-20251001" => {input_token_price: 1.0 / 1_000_000, output_token_price: 5.0 / 1_000_000},
     "claude-sonnet-5" => {input_token_price: 2.0 / 1_000_000, output_token_price: 10.0 / 1_000_000},
@@ -122,7 +154,12 @@ module EvalSweep
     "qwen/qwen3-coder-plus" => {input_token_price: 0.00000065, output_token_price: 0.00000325},
     "qwen/qwen3.7-max" => {input_token_price: 0.000001475, output_token_price: 0.000004425},
     "z-ai/glm-5.2" => {input_token_price: 0.00000119, output_token_price: 0.00000374},
-    "accounts/fireworks/models/deepseek-v4-flash" => {input_token_price: 0.14 / 1_000_000, output_token_price: 0.28 / 1_000_000}
+    "accounts/fireworks/models/deepseek-v4-flash" => {input_token_price: 0.14 / 1_000_000, output_token_price: 0.28 / 1_000_000},
+    "qwen3.6-35b-a3b-4bit" => {input_token_price: 0.0, output_token_price: 0.0},
+    "qwen3.6-35b-a3b-8bit" => {input_token_price: 0.0, output_token_price: 0.0},
+    "qwen3-27b-optiq" => {input_token_price: 0.0, output_token_price: 0.0},
+    "qwen3-122b-a10b" => {input_token_price: 0.0, output_token_price: 0.0},
+    "nemotron-3-super" => {input_token_price: 0.0, output_token_price: 0.0}
   }.freeze
 
   # Per-model thinking-effort override, merged into the request body via
@@ -214,7 +251,9 @@ module EvalSweep
     end
 
     providers_in_use(models).each do |kind|
-      env_key = PROVIDER_ENV_KEYS.fetch(kind)
+      env_key = PROVIDER_ENV_KEYS[kind]
+      next unless env_key
+
       abort "CANARY_LIVE is set but no #{env_key} was loaded - is .env present?" unless ENV[env_key]
     end
   end
@@ -235,12 +274,19 @@ module EvalSweep
   # keys as the authority on what's known. Returns [hidden_models,
   # visible_models, skip] so .run can both derive the spend cap from what
   # will actually run and print what CANARY_SWEEP_SKIP dropped.
+  #
+  # I27: a single-model selection also matches STUDIO_MODELS (hidden-only,
+  # see that constant) - HIDDEN_MODELS itself stays untouched so the
+  # no-model default path a few lines below never picks one up (AC1).
+  # VISIBLE_MODELS & [model] already excludes every studio alias with no
+  # special-casing needed, since VISIBLE_MODELS only ever lists the two
+  # Anthropic anchors.
   def self.select_models(model)
     if model
       unless MODEL_PROVIDERS.key?(model)
         abort "unknown model #{model.inspect} - known models: #{MODEL_PROVIDERS.keys.join(', ')}"
       end
-      return [HIDDEN_MODELS & [model], VISIBLE_MODELS & [model], []]
+      return [(HIDDEN_MODELS + STUDIO_MODELS) & [model], VISIBLE_MODELS & [model], []]
     end
 
     skip = skipped_models
@@ -264,6 +310,11 @@ module EvalSweep
       Canary::Providers::OpenAICompat.new(
         base_url: PROVIDER_BASE_URLS.fetch(kind), api_key: ENV.fetch(PROVIDER_ENV_KEYS.fetch(kind)),
         max_tokens: SWEEP_MAX_TOKENS, extra_body_by_model: extra_body_by_model
+      )
+    when :studio
+      Canary::Providers::OpenAICompat.new(
+        base_url: PROVIDER_BASE_URLS.fetch(kind), api_key: STUDIO_API_KEY,
+        max_tokens: SWEEP_MAX_TOKENS, read_timeout: STUDIO_READ_TIMEOUT
       )
     else
       raise ArgumentError, "unknown provider kind: #{kind.inspect}"

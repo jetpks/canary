@@ -1,5 +1,6 @@
 require "test_helper"
 require "json"
+require "socket"
 
 # Proves Canary::Providers::OpenAICompat's own contract: every
 # finish_reason branch AC3 names, offline against an injected transport
@@ -245,6 +246,33 @@ class OpenAICompatTest < Minitest::Test
     provider = Canary::Providers::OpenAICompat.new(base_url: BASE_URL, api_key: "sk-fixture", transport: transport)
 
     assert_raises(ArgumentError) { provider.sample(model: "m", prompt: "p") }
+  end
+
+  # AC5 (I27): the default read timeout is unchanged from before this
+  # constant existed - every hosted caller (OpenRouter, Fireworks) that
+  # constructs without a read_timeout: keyword keeps today's 60s behavior.
+  def test_default_read_timeout_is_unchanged_at_sixty_seconds
+    assert_equal 60, Canary::Providers::OpenAICompat::DEFAULT_READ_TIMEOUT
+  end
+
+  # AC5: proves read_timeout: actually threads through to the real (default)
+  # transport, not just that the constructor accepts it - a TCP server that
+  # accepts the connection but never writes a response forces the read to
+  # block until read_timeout fires. Localhost only, no live provider call.
+  def test_a_caller_set_read_timeout_is_honored_by_the_default_transport
+    server = TCPServer.new("127.0.0.1", 0)
+    port = server.addr[1]
+    provider = Canary::Providers::OpenAICompat.new(
+      base_url: "http://127.0.0.1:#{port}", api_key: "sk-fixture", read_timeout: 0.2
+    )
+
+    result = provider.sample(model: "m", prompt: "p")
+
+    assert result.failure?
+    assert_equal :transport_error, result.failure.reason
+    assert_includes result.failure.message, "Net::ReadTimeout"
+  ensure
+    server&.close
   end
 
   # The one live test in this file, and the pattern every live test in
