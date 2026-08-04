@@ -24,6 +24,12 @@ require "json"
 # spends a cent unless CANARY_LIVE=1 is set (test/test_helper.rb's own
 # .env-loading gate, mirrored here rather than shared, since a test-only
 # convenience has no business becoming a runtime dependency of bin/).
+#
+# ARGV[0], if given, is a model id (see MODEL_PROVIDERS for the known set)
+# that narrows both arms to that one model instead of the full configured
+# set - a positional arg, not a flag, since it is this script's only
+# selector and needs no OptionParser to carry it (see .select_models). With
+# no ARGV given, CANARY_SWEEP_SKIP still narrows the full set as before.
 module EvalSweep
   # I19 follow-up 3 ruling: the earlier target list (qwen3-coder,
   # deepseek-chat, kimi-k2, llama-3.3-70b, gpt-oss-120b, mistral-large) was
@@ -202,6 +208,25 @@ module EvalSweep
     (ENV["CANARY_SWEEP_SKIP"] || "").split(",").map(&:strip).reject(&:empty?)
   end
 
+  # I24: narrows both arms to a single caller-chosen model (bin/eval_sweep.rb
+  # MODEL_ID), or - with no model given - the full configured sets minus
+  # CANARY_SWEEP_SKIP, unchanged from before this method existed. Aborts
+  # before any env/key demand on an unknown model, naming MODEL_PROVIDERS'
+  # keys as the authority on what's known. Returns [hidden_models,
+  # visible_models, skip] so .run can both derive the spend cap from what
+  # will actually run and print what CANARY_SWEEP_SKIP dropped.
+  def self.select_models(model)
+    if model
+      unless MODEL_PROVIDERS.key?(model)
+        abort "unknown model #{model.inspect} - known models: #{MODEL_PROVIDERS.keys.join(', ')}"
+      end
+      return [HIDDEN_MODELS & [model], VISIBLE_MODELS & [model], []]
+    end
+
+    skip = skipped_models
+    [HIDDEN_MODELS - skip, VISIBLE_MODELS - skip, skip]
+  end
+
   # The distinct provider kinds a set of models actually needs, in the
   # order MODEL_PROVIDERS' own declarations imply - used both to know
   # which credentials load_env! must demand and which provider instances
@@ -262,9 +287,9 @@ module EvalSweep
   end
 
   def self.run
-    skip = skipped_models
-    hidden_models = HIDDEN_MODELS - skip
-    visible_models = VISIBLE_MODELS - skip
+    model = ARGV.first
+    hidden_models, visible_models, skip = select_models(model)
+    puts "selected model: #{model}" if model
     puts "CANARY_SWEEP_SKIP dropped: #{skip.join(', ')}" unless skip.empty?
 
     load_env!(models: hidden_models + visible_models)
@@ -273,7 +298,9 @@ module EvalSweep
     total_calls = (tasks.size * HIDDEN_K * hidden_models.size) + (tasks.size * VISIBLE_K * visible_models.size)
     budget = Canary::Sampler::Budget.new(max_samples: total_calls)
 
-    cap, cap_lines = spend_cap_derivation(tasks_count: tasks.size)
+    cap, cap_lines = spend_cap_derivation(
+      tasks_count: tasks.size, hidden_models: hidden_models, visible_models: visible_models
+    )
     puts "spend guard cap derivation:"
     cap_lines.each { |line| puts line }
     spend_guard = Canary::Sampler::SpendGuard.new(max_dollars: cap, price_table: PRICE_TABLE)
