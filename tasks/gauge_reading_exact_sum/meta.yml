@@ -1,0 +1,12 @@
+category: "Numeric conversion: combining a large whole part with an exact Rational fraction without ever routing the sum through a Float"
+adapter: minitest
+provenance: sourced
+source_attestation: "Sourced from https://github.com/rails/rails/pull/58085, merged 2026-07-16. This PR postdates Anthropic's publicly documented model training-data cutoffs, so treating it as unseen by Anthropic models is a strong heuristic, not a guarantee; for non-Anthropic models, no training-data cutoff is verifiable from public information at all."
+statement: "Implement Reading.new(whole, fraction), constructed from an Integer whole and a Rational fraction with 0 <= fraction < 1, each exposed unchanged via public #whole and #fraction readers. #exact returns the reading's total as an exact Rational - never a Float - equal to whole + fraction, with no loss of precision: this must hold even when whole is large enough (e.g. 10**16 or more) that adding fraction as a Float would round it away entirely, and even when fraction's binary expansion never terminates (e.g. Rational(1, 3)). Two Readings are == when their #exact values are equal to each other, without needing to be the same object."
+broken:
+  - id: float_conversion
+    misconception: "#exact combines whole and fraction by converting the sum to a Float before returning it, on the belief that a Float is just as precise as a Rational for this purpose - so exact totals survive when the fraction is small and binary-friendly, but round away entirely once whole is large enough to exhaust a Float's significant digits, or whenever fraction's binary expansion doesn't terminate."
+  - id: drops_the_fraction
+    misconception: "#exact returns whole alone, wrapped as a Rational, on the mistaken belief that fraction is informational only and never contributes to the reading's total - every reading with a nonzero fraction comes back wrong, though the returned value is at least always a proper Rational."
+  - id: mechanism_free
+    misconception: "#exact combines whole and fraction by converting the sum to a Float before returning it, on the belief that a Float is just as precise as a Rational for this purpose - same misconception as float_conversion."

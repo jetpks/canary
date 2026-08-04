@@ -1,0 +1,12 @@
+category: "Object equality contract: #== must return false, never raise, for a non-Hash argument - including nil"
+adapter: minitest
+provenance: sourced
+source_attestation: "Sourced from https://github.com/rails/rails/pull/57621, merged 2026-06-08. This PR postdates Anthropic's publicly documented model training-data cutoffs, so treating it as unseen by Anthropic models is a strong heuristic, not a guarantee; for non-Anthropic models, no training-data cutoff is verifiable from public information at all."
+statement: "Implement Attributes.new(values = {}), constructed from an optional Hash of starting values. #to_h returns a Hash of the current values. #==(other) returns true when other is a Hash with exactly the same key/value pairs as #to_h, and returns false - never raises - for any other kind of argument, including nil, and including an object that has no #to_h method at all."
+broken:
+  - id: raises_on_non_hash
+    misconception: "#== calls #to_h on other unconditionally and compares the results, on the belief that anything ever compared against an Attributes will itself respond to #to_h - so comparing against a String, an Integer, or a plain Object raises NoMethodError instead of returning false, and comparing an empty Attributes against nil silently returns true, since nil.to_h happens to equal {}."
+  - id: respond_to_to_h_guard
+    misconception: "#== guards with other.respond_to?(:to_h) before comparing, which correctly stops the raise for a String, Integer, or plain Object - but nil also responds to #to_h (returning {}), so an empty Attributes is still wrongly equal to nil, the one case the guard needed to rule out by class rather than by duck-typing."
+  - id: mechanism_free
+    misconception: "#== calls #to_h on other unconditionally and compares the results - same misconception as raises_on_non_hash."

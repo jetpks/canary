@@ -1,0 +1,12 @@
+category: "Aliasing safety: frozen? alone isn't the right guard for whether a method may mutate its argument in place"
+adapter: minitest
+provenance: sourced
+source_attestation: "Sourced from https://github.com/rails/rails/pull/57675, merged 2026-06-13. This PR postdates Anthropic's publicly documented model training-data cutoffs, so treating it as unseen by Anthropic models is a strong heuristic, not a guarantee; for non-Anthropic models, no training-data cutoff is verifiable from public information at all."
+statement: "Implement Normalizer.squash(text), a module method that takes a String and returns a new String with every run of internal whitespace collapsed to a single space, leading and trailing whitespace removed, and every character downcased - e.g. Normalizer.squash(\"  Hello   World  \") returns \"hello world\". squash must never modify text itself in any way, and must never raise trying to - regardless of whether text is frozen or not - and the String it returns is always a different object from text, even when text was already fully normalized."
+broken:
+  - id: dups_only_when_frozen
+    misconception: "squash only duplicates text when text.frozen? is true before mutating it in place, on the belief that mutation is only a problem when it would raise FrozenError - so an unfrozen argument gets silently mutated by the in-place downcase!/gsub!/strip! calls, even though a frozen argument is handled safely."
+  - id: never_dups
+    misconception: "squash mutates text in place unconditionally, with no dup at all, on the belief that returning the mutated argument is equivalent to returning a new normalized string - this mutates every unfrozen argument in place, and raises FrozenError outright for a frozen one."
+  - id: mechanism_free
+    misconception: "squash mutates text in place unconditionally, with no dup at all - same misconception as never_dups."

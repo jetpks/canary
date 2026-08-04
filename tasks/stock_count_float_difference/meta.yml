@@ -1,0 +1,12 @@
+category: "Arithmetic return-type contract: an operator must return the same numeric type regardless of which acceptable operand kind was passed"
+adapter: minitest
+provenance: sourced
+source_attestation: "Sourced from https://github.com/rails/rails/pull/58295, merged 2026-07-29. This PR postdates Anthropic's publicly documented model training-data cutoffs, so treating it as unseen by Anthropic models is a strong heuristic, not a guarantee; for non-Anthropic models, no training-data cutoff is verifiable from public information at all."
+statement: "Implement StockCount.new(count), constructed with a single Integer count, exposed unchanged via a public #count reader. #-(other) returns the numeric difference between self and other as a Float, always - whether other is another StockCount (subtract its #count) or a plain Rational (e.g. Rational(7, 2)) - e.g. StockCount.new(10) - StockCount.new(3) equals 7.0 and is a Float, and StockCount.new(10) - Rational(7, 2) equals 6.5 and is a Float too, never a Rational. Two StockCounts are == when their #count values are equal to each other, without needing to be the same object."
+broken:
+  - id: rational_leaks_through
+    misconception: "#- correctly coerces to Float when subtracting another StockCount, but the branch that subtracts a plain Rational just returns the raw Rational difference, on the belief that a Rational is already numeric enough - so the return type is inconsistent depending on which kind of operand was subtracted."
+  - id: reversed_rational_operand
+    misconception: "#- coerces to Float for both operand kinds, but the Rational branch computes other minus self's count instead of self's count minus other, on the mistaken belief that subtraction is commutative here - the type comes back right, but the value is negated whenever the operand is a plain Rational."
+  - id: mechanism_free
+    misconception: "#- correctly coerces to Float when subtracting another StockCount, but the branch that subtracts a plain Rational just returns the raw Rational difference - same misconception as rational_leaks_through."
