@@ -243,9 +243,19 @@ class TaskRepoTest < Minitest::Test
     end
   end
 
-  def test_todays_corpus_is_entirely_authored_with_no_attestation
-    assert @entries.all? { |e| e.provenance == "authored" }
-    assert @entries.all? { |e| e.source_attestation.nil? }
+  # AC5: I25 added the corpus's first sourced tasks, so the old
+  # entirely-authored snapshot no longer holds. This is the partition
+  # invariant that replaces it, in the same dynamic shape as its
+  # neighbors above (every entry TaskRepo.all resolves right now, not a
+  # hardcoded list): every authored task still carries no attestation,
+  # and every sourced task's attestation is non-blank and cites the
+  # upstream rails/rails pull request it was drawn from.
+  def test_the_corpus_partitions_cleanly_between_authored_and_sourced_provenance
+    authored, sourced = @entries.partition { |e| e.provenance == "authored" }
+
+    assert authored.all? { |e| e.source_attestation.nil? }, "an authored task must carry no source_attestation"
+    assert sourced.all? { |e| e.source_attestation.to_s.match?(/\S/) }, "a sourced task must carry a non-blank source_attestation"
+    assert sourced.all? { |e| e.source_attestation.include?("github.com/rails/rails/pull/") }, "a sourced task's source_attestation must cite its upstream rails/rails pull request"
   end
 
   def test_a_sourced_task_with_no_attestation_fails_loudly_at_load_time

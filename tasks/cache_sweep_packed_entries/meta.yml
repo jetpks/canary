@@ -1,0 +1,12 @@
+category: "Duck-typing: a value fetched from storage may not always be the rich type a method assumes it is"
+adapter: minitest
+provenance: sourced
+source_attestation: "Sourced from https://github.com/rails/rails/pull/57671, merged 2026-06-12. This PR postdates Anthropic's publicly documented model training-data cutoffs, so treating it as unseen by Anthropic models is a strong heuristic, not a guarantee; for non-Anthropic models, no training-data cutoff is verifiable from public information at all."
+statement: "Implement Cache.new(packer: nil). #write(key, payload, stale: false) stores payload under key. #read(key) returns the payload most recently written under key, or nil if key was never written or has been removed by #sweep. #sweep removes every entry whose #write call passed stale: true, leaving every other entry in place. This must work correctly both with the default in-memory storage (packer: nil) and when constructed with a packer object such as Marshal (Cache.new(packer: Marshal)) - #write and every method that later inspects a stored entry must round-trip it through that packer (packer.dump when writing, packer.load when reading it back, whether for #read or for #sweep's own stale check)."
+broken:
+  - id: sweep_assumes_unwrapped_storage
+    misconception: "#sweep reads the raw stored value straight out of storage and calls #stale? on it directly, on the belief that storage always holds the rich wrapped entry - true when packer is nil, but storage holds whatever packer.dump produced (e.g. a Marshal-dumped String) once a packer is configured, and String has no #stale? method."
+  - id: read_assumes_unwrapped_storage
+    misconception: "#read reads the raw stored value straight out of storage and calls #payload on it directly, the same assumption as above but in #read instead of #sweep - correct when packer is nil, but raises once a packer is configured, since the raw value read back is packer.dump's output, not the original entry."
+  - id: mechanism_free
+    misconception: "#sweep reads the raw stored value straight out of storage and calls #stale? on it directly - same misconception as sweep_assumes_unwrapped_storage."

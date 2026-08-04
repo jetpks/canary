@@ -1,0 +1,12 @@
+category: "Copy protocol: #initialize_copy must regenerate per-instance derived state, not just let it get shallow-copied"
+adapter: rspec
+provenance: sourced
+source_attestation: "Sourced from https://github.com/rails/rails/pull/57637, merged 2026-06-10. This PR postdates Anthropic's publicly documented model training-data cutoffs, so treating it as unseen by Anthropic models is a strong heuristic, not a guarantee; for non-Anthropic models, no training-data cutoff is verifiable from public information at all."
+statement: "Implement Counter.new (no arguments), which starts at #value 0. #bump adds the counter's current step (1 by default) to its value and returns the counter itself. #with_step(step) { ... } sets this counter's own step to step for the duration of the block and restores its previous step once the block returns, whether the block raises or not; this override applies only to the one Counter #with_step was called on - it must never change what #bump adds for any other Counter, including one produced by #dup or #clone from it. #dup and #clone each produce an independent copy whose #value starts equal to the original's #value at the moment of copying; from that point on, #bump and #with_step on the copy never affect the original, and vice versa."
+broken:
+  - id: shares_copy_key
+    misconception: "#initialize_copy is never defined, so #dup and #clone leave @step_key exactly as Object's default shallow copy sets it - identical to the original's - so the copy and the original silently share one step override slot, and #with_step on either one temporarily changes what #bump adds on both."
+  - id: resets_count_on_copy
+    misconception: "#initialize_copy correctly regenerates @step_key so the sharing bug above doesn't happen, but it also resets @count to 0, on the mistaken belief that a copy should start counting fresh - so a copy's #value never reflects what the original had already counted at the moment of copying."
+  - id: mechanism_free
+    misconception: "#initialize_copy is never defined, so #dup and #clone leave @step_key identical to the original's - same misconception as shares_copy_key."
