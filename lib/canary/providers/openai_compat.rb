@@ -27,13 +27,20 @@ module Canary
 
       DEFAULT_MAX_TOKENS = 4096
       OPEN_TIMEOUT = 10
-      READ_TIMEOUT = 60
+      DEFAULT_READ_TIMEOUT = 60
 
-      DEFAULT_TRANSPORT = lambda do |uri:, headers:, body:|
-        Net::HTTP.start(uri.host, uri.port, use_ssl: uri.scheme == "https", open_timeout: OPEN_TIMEOUT, read_timeout: READ_TIMEOUT) do |http|
-          request = Net::HTTP::Post.new(uri, headers)
-          request.body = body
-          http.request(request)
+      # A per-instance read timeout, not a fixed constant: most callers are
+      # fine with DEFAULT_READ_TIMEOUT's 60s, but a backend that has to load
+      # a model into memory before it can answer at all needs an order of
+      # magnitude more headroom - a caller with that need should be able to
+      # say so without moving the default every other caller inherits.
+      def self.default_transport(read_timeout)
+        lambda do |uri:, headers:, body:|
+          Net::HTTP.start(uri.host, uri.port, use_ssl: uri.scheme == "https", open_timeout: OPEN_TIMEOUT, read_timeout: read_timeout) do |http|
+            request = Net::HTTP::Post.new(uri, headers)
+            request.body = body
+            http.request(request)
+          end
         end
       end
 
@@ -46,11 +53,11 @@ module Canary
       # reasoning-heavy model needs a different setting than one that
       # doesn't reason at all. Absent from the hash for a given model is a
       # no-op merge, not an error - most models need nothing extra.
-      def initialize(base_url:, api_key:, max_tokens: DEFAULT_MAX_TOKENS, transport: DEFAULT_TRANSPORT, extra_body_by_model: {})
+      def initialize(base_url:, api_key:, max_tokens: DEFAULT_MAX_TOKENS, read_timeout: DEFAULT_READ_TIMEOUT, transport: nil, extra_body_by_model: {})
         @uri = URI("#{base_url}/chat/completions")
         @api_key = api_key
         @max_tokens = max_tokens
-        @transport = transport
+        @transport = transport || OpenAICompat.default_transport(read_timeout)
         @extra_body_by_model = extra_body_by_model
       end
 
