@@ -8,7 +8,9 @@ running it live.
 
 ## It is opt-in, and it stays that way
 
-    abort "CANARY_LIVE=1 is required to run the live sweep" unless ENV["CANARY_LIVE"]
+```ruby
+abort "CANARY_LIVE=1 is required to run the live sweep" unless ENV["CANARY_LIVE"]
+```
 
 (`bin/eval_sweep.rb`, `EvalSweep.load_env!`). Nothing in this script makes a
 network call, reads any credential, or spends a cent unless `CANARY_LIVE=1`
@@ -19,19 +21,55 @@ per provider (`ANTHROPIC_API_KEY`, `OPENROUTER_API_KEY`,
 `FIREWORKS_API_KEY`, per `EvalSweep::PROVIDER_ENV_KEYS`). No credential file
 is named here; if you need to run this live, read the script.
 
-**Presented, not executed** — this is the live invocation, shown for
-reference only; it is not run as part of producing this doc:
+**Presented, not executed** — these are the live invocations, shown for
+reference only; neither is run as part of producing this doc.
 
-    CANARY_LIVE=1 bundle exec ruby bin/eval_sweep.rb
+The full sweep — every configured model in `EvalSweep::HIDDEN_MODELS` /
+`EvalSweep::VISIBLE_MODELS`, so every provider key in
+`EvalSweep::PROVIDER_ENV_KEYS` is demanded:
+
+```console
+CANARY_LIVE=1 bundle exec ruby bin/eval_sweep.rb
+```
+
+One model — a positional argument narrows both arms to exactly that model,
+so only its provider's key is demanded (an OpenRouter model like this one
+needs `OPENROUTER_API_KEY` only, set in the environment or the gitignored
+`.env` file `load_env!` reads, and runs hidden-only, since no OpenRouter
+model is in `VISIBLE_MODELS`):
+
+```console
+CANARY_LIVE=1 bundle exec ruby bin/eval_sweep.rb qwen/qwen3-coder-plus
+```
+
+A model id that isn't a key of `EvalSweep::MODEL_PROVIDERS` aborts before any
+env or key demand, naming the models it does know. Selecting a model this way
+is independent of `CANARY_SWEEP_SKIP` below — it takes over the whole
+model-selection decision, skip or no skip.
+
+## Dropping a model without touching this file
+
+A model can also be dropped from the *full* sweep (rather than narrowed to
+one) via a comma-separated env var, without editing `HIDDEN_MODELS` /
+`VISIBLE_MODELS` — useful when a preflight check finds a model that shouldn't
+run this time:
+
+```console
+CANARY_LIVE=1 CANARY_SWEEP_SKIP="qwen/qwen3-coder-plus,z-ai/glm-5.2" bundle exec ruby bin/eval_sweep.rb
+```
+
+`CANARY_SWEEP_SKIP` has no effect when a model is selected positionally, per
+above — it only narrows the full-sweep path.
 
 ## Spend is reported, not optimized
 
-Before making any call, the script derives a spend cap from the configured
-model/task/token-budget set (`EvalSweep.spend_cap_derivation` — 3x the
-worst case if every call maxed out its token budget, printed line by line so
-the number carries its own derivation rather than living in a
-hand-maintained constant) and wires it into a
-`Canary::Sampler::SpendGuard` that blocks further calls once real,
+Before making any call, the script derives a spend cap from the models that
+will actually run — the full configured set minus any `CANARY_SWEEP_SKIP`
+drops, or just the one selected model — plus the task and token-budget count
+(`EvalSweep.spend_cap_derivation` — 3x the worst case if every call maxed out
+its token budget, printed line by line so the number carries its own
+derivation rather than living in a hand-maintained constant) and wires it
+into a `Canary::Sampler::SpendGuard` that blocks further calls once real,
 recorded spend exceeds it. The run's actual spend — computed from each
 record's real recorded token usage against the price table, not the cap —
 is printed at the end and written into `results/run-<timestamp>/summary.md`
@@ -56,16 +94,22 @@ earlier run's artifact, kept as-is):
 ## Prove the shape offline
 
 `test/canary/eval/eval_sweep_test.rb` exercises `bin/eval_sweep.rb`'s
-directory layout, provider/price-table configuration, and spend-cap math
-without `CANARY_LIVE` and without a network call:
+directory layout, provider/price-table configuration, model-selection
+narrowing, and spend-cap math without `CANARY_LIVE` and without a network
+call:
 
-    bundle exec ruby -Ilib -Itest test/canary/eval/eval_sweep_test.rb
+```console
+bundle exec ruby -Ilib -Itest test/canary/eval/eval_sweep_test.rb
+```
 
 Observed output:
 
-    Finished in 0.001127s, 8873.1147 runs/s, 62999.1145 assertions/s.
+```text
+Finished in 0.001255s, 12749.0039 runs/s, 89243.0272 assertions/s.
 
-    10 runs, 71 assertions, 0 failures, 0 errors, 0 skips
+16 runs, 112 assertions, 0 failures, 0 errors, 0 skips
+```
 
 Run this after touching `bin/eval_sweep.rb` — it catches a model missing a
-provider/price-table entry before a live run would.
+provider/price-table entry, or a selection/cap regression, before a live run
+would.
