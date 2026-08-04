@@ -87,6 +87,24 @@ module EvalSweep
     "qwen3-122b-a10b", "nemotron-3-super"
   ].freeze
 
+  # I29 R12 phase 1 Arm H: seven hosted consumer-class open-weight models
+  # spanning an active-parameter gradient (~3B to ~12B active, plus two
+  # dense siblings - qwen3.6-27b and gemma-4-31b-it), bought as a later
+  # `armh` run lane's per-model targets (one `bin/eval_sweep.rb <id>`
+  # invocation per model). Every id verified live against GET
+  # https://openrouter.ai/api/v1/models/<id>/endpoints (2026-08-04) - see
+  # PROVIDER_PINS for the pinned route each carries. Deliberately its own
+  # list rather than folded into HIDDEN_MODELS, same reasoning as
+  # STUDIO_MODELS above: a bare bin/eval_sweep.rb invocation must stay
+  # byte-identical to today's sweep - an Arm H model only ever runs when
+  # named explicitly via the single-model positional invocation (see
+  # .select_models).
+  ARM_H_MODELS = [
+    "qwen/qwen3.6-27b", "qwen/qwen3.6-35b-a3b", "google/gemma-4-26b-a4b-it",
+    "google/gemma-4-31b-it", "openai/gpt-oss-120b", "qwen/qwen3.5-122b-a10b",
+    "nvidia/nemotron-3-super-120b-a12b"
+  ].freeze
+
   # Which provider endpoint each configured model routes through. A model
   # missing here is a configuration error (MODEL_PROVIDERS.fetch raises),
   # not a silent default - the two new endpoints are cheap to add a line
@@ -106,7 +124,14 @@ module EvalSweep
     "qwen3.6-35b-a3b-8bit" => :studio,
     "qwen3-27b-optiq" => :studio,
     "qwen3-122b-a10b" => :studio,
-    "nemotron-3-super" => :studio
+    "nemotron-3-super" => :studio,
+    "qwen/qwen3.6-27b" => :openrouter,
+    "qwen/qwen3.6-35b-a3b" => :openrouter,
+    "google/gemma-4-26b-a4b-it" => :openrouter,
+    "google/gemma-4-31b-it" => :openrouter,
+    "openai/gpt-oss-120b" => :openrouter,
+    "qwen/qwen3.5-122b-a10b" => :openrouter,
+    "nvidia/nemotron-3-super-120b-a12b" => :openrouter
   }.freeze
 
   PROVIDER_BASE_URLS = {
@@ -144,6 +169,10 @@ module EvalSweep
   # (2026-08-03): $0.14/MTok input, $0.28/MTok output. STUDIO_MODELS are
   # $0.00 - local serving on already-owned hardware has no per-token
   # metering, so their true marginal rate is zero, not merely cheap.
+  # ARM_H_MODELS rows are the pinned endpoint's own "prompt"/"completion"
+  # figures (2026-08-04) from GET /models/<id>/endpoints, i.e. the
+  # SiliconFlow (six models) or DeepInfra (nemotron-3-super-120b-a12b) row
+  # specifically, not the model's cheapest or default-routed endpoint.
   PRICE_TABLE = {
     "claude-haiku-4-5-20251001" => {input_token_price: 1.0 / 1_000_000, output_token_price: 5.0 / 1_000_000},
     "claude-sonnet-5" => {input_token_price: 2.0 / 1_000_000, output_token_price: 10.0 / 1_000_000},
@@ -159,7 +188,14 @@ module EvalSweep
     "qwen3.6-35b-a3b-8bit" => {input_token_price: 0.0, output_token_price: 0.0},
     "qwen3-27b-optiq" => {input_token_price: 0.0, output_token_price: 0.0},
     "qwen3-122b-a10b" => {input_token_price: 0.0, output_token_price: 0.0},
-    "nemotron-3-super" => {input_token_price: 0.0, output_token_price: 0.0}
+    "nemotron-3-super" => {input_token_price: 0.0, output_token_price: 0.0},
+    "qwen/qwen3.6-27b" => {input_token_price: 0.0000003, output_token_price: 0.0000032},
+    "qwen/qwen3.6-35b-a3b" => {input_token_price: 0.0000002, output_token_price: 0.0000016},
+    "google/gemma-4-26b-a4b-it" => {input_token_price: 0.00000012, output_token_price: 0.0000004},
+    "google/gemma-4-31b-it" => {input_token_price: 0.00000013, output_token_price: 0.0000004},
+    "openai/gpt-oss-120b" => {input_token_price: 0.00000005, output_token_price: 0.00000045},
+    "qwen/qwen3.5-122b-a10b" => {input_token_price: 0.00000026, output_token_price: 0.00000208},
+    "nvidia/nemotron-3-super-120b-a12b" => {input_token_price: 0.000000085, output_token_price: 0.0000004}
   }.freeze
 
   # Per-model thinking-effort override, merged into the request body via
@@ -193,6 +229,15 @@ module EvalSweep
   # exactly "low"/"medium"/"high" - "none"/false/an integer all error. The
   # Fireworks probe here (deepseek-v4-flash, not Harmony-format) uses the
   # plain reasoning_effort string.
+  #
+  # I29 Arm H: openai/gpt-oss-120b (GET /models "reasoning":
+  # {"mandatory": true, "supported_efforts": ["high","medium","low"]}) and
+  # nvidia/nemotron-3-super-120b-a12b ("reasoning": {"default_enabled":
+  # true, "supported_efforts": ["medium","low"]}) both enumerate "low" as a
+  # supported effort live (2026-08-04), same OpenRouter unified mechanism
+  # as above - the lowest effort that still leaves room for visible text
+  # under SWEEP_MAX_TOKENS. The other five Arm H models are left out here
+  # deliberately per the frozen pin table's own reasoning-class split.
   THINKING_EFFORT = {
     "deepseek/deepseek-v4-flash" => {reasoning: {effort: "low"}},
     "deepseek/deepseek-v4-pro" => {reasoning: {effort: "low"}},
@@ -200,7 +245,9 @@ module EvalSweep
     "moonshotai/kimi-k2.7-code" => {reasoning: {effort: "low"}},
     "qwen/qwen3.7-max" => {reasoning: {effort: "low"}},
     "z-ai/glm-5.2" => {reasoning: {effort: "low"}},
-    "accounts/fireworks/models/deepseek-v4-flash" => {reasoning_effort: "low"}
+    "accounts/fireworks/models/deepseek-v4-flash" => {reasoning_effort: "low"},
+    "openai/gpt-oss-120b" => {reasoning: {effort: "low"}},
+    "nvidia/nemotron-3-super-120b-a12b" => {reasoning: {effort: "low"}}
   }.freeze
 
   # I26 (I25 F4): eval_sweep.rb never pinned OpenRouter routing, so every
@@ -213,6 +260,12 @@ module EvalSweep
   # (accounts/fireworks/models/deepseek-v4-flash) is deliberately absent:
   # it hits a different API entirely and must never receive an OpenRouter
   # routing field.
+  #
+  # I29 Arm H: the seven R12 phase 1 hosted ids, pinned per the frozen
+  # table the architect set this session - SiliconFlow fp8 for six models
+  # (nemotron-3-super-120b-a12b's only non-fp4 SiliconFlow-class route is
+  # DeepInfra bf16 instead). Every tag verified present live against GET
+  # /models/<id>/endpoints, 2026-08-04.
   PROVIDER_PINS = {
     "deepseek/deepseek-v4-flash" => "alibaba/fp8",
     "deepseek/deepseek-v4-pro" => "alibaba/fp8",
@@ -220,7 +273,14 @@ module EvalSweep
     "moonshotai/kimi-k2.7-code" => "coreweave/int4",
     "qwen/qwen3-coder-plus" => "alibaba/fp8",
     "qwen/qwen3.7-max" => "alibaba/fp8",
-    "z-ai/glm-5.2" => "baseten/fp8"
+    "z-ai/glm-5.2" => "baseten/fp8",
+    "qwen/qwen3.6-27b" => "siliconflow/fp8",
+    "qwen/qwen3.6-35b-a3b" => "siliconflow/fp8",
+    "google/gemma-4-26b-a4b-it" => "siliconflow/fp8",
+    "google/gemma-4-31b-it" => "siliconflow/fp8",
+    "openai/gpt-oss-120b" => "siliconflow/fp8",
+    "qwen/qwen3.5-122b-a10b" => "siliconflow/fp8",
+    "nvidia/nemotron-3-super-120b-a12b" => "deepinfra/bf16"
   }.freeze
 
   # The eval's own token budget, passed explicitly to every provider
@@ -281,12 +341,15 @@ module EvalSweep
   # VISIBLE_MODELS & [model] already excludes every studio alias with no
   # special-casing needed, since VISIBLE_MODELS only ever lists the two
   # Anthropic anchors.
+  #
+  # I29: ARM_H_MODELS joins the same union on the same terms as
+  # STUDIO_MODELS - hidden-only, selectable-not-default (AC1).
   def self.select_models(model)
     if model
       unless MODEL_PROVIDERS.key?(model)
         abort "unknown model #{model.inspect} - known models: #{MODEL_PROVIDERS.keys.join(', ')}"
       end
-      return [(HIDDEN_MODELS + STUDIO_MODELS) & [model], VISIBLE_MODELS & [model], []]
+      return [(HIDDEN_MODELS + STUDIO_MODELS + ARM_H_MODELS) & [model], VISIBLE_MODELS & [model], []]
     end
 
     skip = skipped_models
