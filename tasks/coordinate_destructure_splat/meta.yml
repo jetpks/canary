@@ -1,0 +1,11 @@
+category: "implicit array conversion: multiple-assignment destructuring converts via one hook, while splatting into a call or array literal converts via a different one"
+adapter: minitest
+provenance: authored
+statement: "Implement Coordinate.new(row, col), constructed with two positional arguments, exposed unchanged via public #row and #col readers. Writing row, col = coordinate (multiple assignment) must assign row and col exactly as if coordinate were the two-element array [row, col]. Passing a coordinate to a method call with a leading splat (e.g. two(*coordinate) calling a method defined as def two(a, b)), or splatting it into a literal array (e.g. [0, *coordinate]), must expand it into its row and col values in that same order, in each of those positions. Array(coordinate) must also return [row, col]."
+broken:
+  - id: only_to_a
+    misconception: "only the hook that method-call splatting and Array() consult is implemented, on the mistaken belief that it also covers multiple-assignment destructuring - so row, col = coordinate leaves coordinate itself assigned to row and nil assigned to col, instead of destructuring into the two values."
+  - id: only_to_ary
+    misconception: "only the hook that multiple-assignment destructuring consults is implemented, on the mistaken belief that it also covers splatting - so destructuring works, but splatting the coordinate into a method call or an array literal raises ArgumentError or leaves the coordinate un-expanded, instead of spreading into its row and col values."
+  - id: mechanism_free
+    misconception: "the coordinate exposes only plain #row and #col readers with no conversion hook of any kind, on the mistaken belief that Ruby destructures and splats any object with the right-looking accessors automatically - so both row, col = coordinate and splatting it anywhere leave the coordinate un-expanded."

@@ -1,0 +1,11 @@
+category: "membership by object identity rather than by == value equality"
+adapter: minitest
+provenance: authored
+statement: "Implement Registry.new, taking no arguments. #register(obj) adds obj to the registry and returns the registry itself. Registering the very same object a second time - the identical object, not merely one that is == to it - leaves the registry's contents unchanged: its count of registered objects does not grow. Registering a different object that happens to be == to one already registered adds it as a genuinely new, additional member, and both remain registered as distinct entries afterward. #registered?(obj) returns true only when obj itself, that same object, has previously been passed to #register - not merely an object that is == to one that was. #size returns the current number of registered objects. #to_a returns the currently registered objects as an array, in the order each was first registered."
+broken:
+  - id: value_equality_dedup
+    misconception: "register and registered? are implemented with == (e.g. via Array#include?), on the mistaken belief that value equality is what determines membership - so registering a second, different object that is merely == to an already-registered one is wrongly treated as already present, and the registry never grows past one entry for equal-valued objects."
+  - id: always_appends_without_dedup
+    misconception: "register always appends without checking whether the object is already present, on the mistaken belief that nothing needs deduplicating - so registering the exact same object twice wrongly doubles the registry's size instead of leaving it unchanged."
+  - id: mechanism_free
+    misconception: "register and registered? are implemented with == (e.g. via Array#include?), on the mistaken belief that value equality is what determines membership - so registering a second, different object that is merely == to an already-registered one is wrongly treated as already present - same misconception as value_equality_dedup."

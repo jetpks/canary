@@ -1,0 +1,11 @@
+category: "coercion for a non-commutative operator: the operand order must be preserved, not just the type"
+adapter: minitest
+provenance: authored
+statement: "Implement Distance.new(meters), constructed with a single numeric argument, exposed unchanged via a public #meters reader. #-(other) returns a new Distance representing self minus other, where other may be another Distance or a plain Integer measured in meters - e.g. Distance.new(10) - Distance.new(3) equals Distance.new(7), and Distance.new(10) - 3 equals Distance.new(7). Writing the Integer first must also work, and must produce the result of subtracting the Distance from the Integer, not the other way around - 10 - Distance.new(3) equals Distance.new(7), while 3 - Distance.new(10) equals Distance.new(-7). Two Distances are == when their #meters values are equal to each other, without needing to be the same object."
+broken:
+  - id: no_coerce
+    misconception: "only #- is implemented, so Distance.new(10) - Distance.new(3) and Distance.new(10) - 3 both work, but 10 - Distance.new(3) raises TypeError since Integer#- has no idea how to subtract a Distance and nothing tells it how."
+  - id: reversed_operand_direction
+    misconception: "coercion is implemented so Integer first works without raising, but #- itself computes other.meters minus self's meters instead of self's meters minus other.meters - for a commutative operator this would go unnoticed, but subtraction is not commutative, so every subtraction (Distance minus Distance, Distance minus Integer, and Integer minus Distance alike) comes back with the sign flipped."
+  - id: mechanism_free
+    misconception: "only #- is implemented, so Distance.new(10) - Distance.new(3) and Distance.new(10) - 3 both work, but 10 - Distance.new(3) raises TypeError since Integer#- has no idea how to subtract a Distance and nothing tells it how - same misconception as no_coerce."
