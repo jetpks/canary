@@ -166,8 +166,26 @@ class RunnerTest < Minitest::Test
     sink_file&.unlink
   end
 
-  def test_a_prefilter_reject_caused_by_truncation_is_a_non_score_never_a_passed_verdict
+  # AC6(a): an EOF-anchored prefilter truncation on a clean stop (:end_turn)
+  # is the model's own doing, not a harness cutoff - it must not be labeled
+  # :truncated.
+  def test_a_prefilter_reject_caused_by_eof_truncation_on_a_clean_stop_is_a_distinct_non_score
     runner = Canary::Eval::Runner.new(sampler: build_sampler(success_fake(TRUNCATED_CODE_RESPONSE)))
+
+    record = runner.call(entries: [build_entry], models: ["fixture-model"], k: 1, grader: false).first
+
+    refute record.scored?
+    assert_equal :premature_stop, record.non_score_reason
+    assert_nil record.passed
+    assert_equal :end_turn, record.stop_reason
+  end
+
+  # AC6(b): the same EOF-anchored prefilter truncation on a cutoff stop
+  # (:max_tokens) IS an honest :truncated - the provider evidenced the
+  # cutoff itself.
+  def test_a_prefilter_reject_caused_by_eof_truncation_on_a_cutoff_stop_is_truncated
+    fake = Canary::Providers::Fake.new { |model:, prompt:| Dry::Monads::Success(Canary::Providers::Sample.new(text: TRUNCATED_CODE_RESPONSE, raw: {usage: {input_tokens: 1, output_tokens: 1}}, stop_reason: :max_tokens)) }
+    runner = Canary::Eval::Runner.new(sampler: build_sampler(fake))
 
     record = runner.call(entries: [build_entry], models: ["fixture-model"], k: 1, grader: false).first
 
