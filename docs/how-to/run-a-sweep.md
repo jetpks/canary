@@ -35,7 +35,7 @@ CANARY_LIVE=1 bundle exec ruby bin/eval_sweep.rb
 One model — a positional argument narrows both arms to exactly that model,
 so only its provider's key is demanded (an OpenRouter model like this one
 needs `OPENROUTER_API_KEY` only, set in the environment or the gitignored
-`.env` file `load_env!` reads, and runs hidden-only, since no OpenRouter
+environment file `load_env!` reads, and runs hidden-only, since no OpenRouter
 model is in `VISIBLE_MODELS`):
 
 ```console
