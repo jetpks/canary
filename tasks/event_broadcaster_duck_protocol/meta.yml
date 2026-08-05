@@ -1,0 +1,11 @@
+category: "Duck-typing: a listener earns acceptance by responding to #notify, not by belonging to any particular class"
+adapter: minitest
+provenance: authored
+statement: "Implement EventBroadcaster.new (no constructor arguments) with #subscribe(listener) that registers a collaborator to be notified later - listener may be any object that responds to #notify(event); no other method or class is assumed of it. #publish(event) calls #notify(event) on every currently-subscribed listener, in the order each was subscribed, and returns the count of #notify calls it made. Subscribing the same listener object more than once registers it that many times: a later #publish then calls #notify on it once per subscription, and each such call counts separately toward the returned count."
+broken:
+  - id: rejects_non_struct_listeners
+    misconception: "subscribe guards with listener.is_a?(Struct) in addition to listener.respond_to?(:notify), on the assumption that a listener will always be a lightweight Struct-based value object, so a plain object duck that implements #notify without being Struct-based is rejected with a TypeError instead of accepted."
+  - id: deduplicates_subscriptions
+    misconception: "subscribe stores listeners in a way that collapses repeats (checking include? before appending), on the assumption that registering the same listener twice must be redundant, so subscribing the same listener object twice only registers it once and #publish notifies it - and counts it - only once instead of twice."
+  - id: mechanism_free
+    misconception: "publish notifies every listener correctly but returns the result of Array#each (the listeners array itself) instead of the count of notify calls made, since the return value was never a deliberate choice."

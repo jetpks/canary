@@ -1,0 +1,11 @@
+category: "Polymorphism over type-switching: behavior should dispatch through each element's own protocol method, never a case/when on known classes"
+adapter: minitest
+provenance: authored
+statement: "Implement ShippingQuote.new(packages), constructed with a single positional Array of package collaborators. Each element of packages may be any object that responds to #shipping_cost (returning an Integer number of cents) and #tracking_label (returning a String); no other method or class is assumed of it. #total_cost returns the sum of #shipping_cost across every package in packages. #labels returns an Array of #tracking_label, one per package, in the same order as packages. This must work for any mix of protocol-honoring packages, whatever their internal implementation - for instance, one package might compute #shipping_cost from its weight and another from a flat expedited rate, but ShippingQuote itself must not assume either shape."
+broken:
+  - id: type_switches_on_known_package_classes
+    misconception: "total_cost dispatches with a case/when on the two package classes seen during development instead of just calling #shipping_cost on each package, raising ArgumentError for any package whose class isn't one of those two - correct for a mix of only the anticipated shapes, wrong for any other protocol-honoring package."
+  - id: reverses_labels
+    misconception: "total_cost sums #shipping_cost correctly for any package, but labels maps #tracking_label and then reverses the array, so the labels come back in the opposite order from packages regardless of package shape."
+  - id: mechanism_free
+    misconception: "total_cost sums #cost instead of #shipping_cost, a plausible-sounding but wrong method name, so it raises NoMethodError for every package regardless of shape."
