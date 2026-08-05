@@ -1,0 +1,11 @@
+category: "No structural reaching: a collaborator's returned collection is owned by the collaborator and must be treated as read-only"
+adapter: rspec
+provenance: authored
+statement: "Implement MoodBoard.new(palette), constructed with a single positional collaborator palette. palette must respond to #swatches, returning an Array of String hex color codes currently known to palette. That Array belongs to palette: your implementation may read its contents but must not modify it, and must not retain it as part of the board's own state - palette may return the very same Array object on every call. #sorted_swatches returns a new Array holding every hex code from palette.swatches sorted in ascending String order. #distinct_count returns the Integer count of distinct hex codes among palette.swatches, counting duplicates once."
+broken:
+  - id: sorts_the_collaborators_array_in_place
+    misconception: "sorted_swatches calls palette.swatches.sort! and returns that same array, on the assumption that the array returned by #swatches is always a disposable, freshly-built one - correct when palette hands back a fresh Array each call, but raising FrozenError against a palette that always returns the very same Array object."
+  - id: counts_duplicates_as_distinct
+    misconception: "distinct_count returns palette.swatches.size directly instead of deduplicating first, so a palette whose swatches contain any repeated hex code is counted too high, regardless of whether the array palette returns is fresh or the same one every call."
+  - id: mechanism_free
+    misconception: "sorted_swatches calls palette.swatches.sort! and returns that same array, on the assumption that the array returned by #swatches is always a disposable, freshly-built one - correct when palette hands back a fresh Array each call, but raising FrozenError against a palette that always returns the very same Array object - same misconception as sorts_the_collaborators_array_in_place."
