@@ -1,0 +1,11 @@
+category: "Liskov substitution: a subclass's override must honor its superclass's contract, including an optional block"
+adapter: minitest
+provenance: authored
+statement: "Implement KeyStore.new (no constructor arguments), which stores key-value pairs. #store(key, value) saves value under key, overwriting any value already stored there. #fetch(key), given a block, returns the value already stored under key if key was previously stored via #store; otherwise it calls the block with no arguments and returns the block's result, without storing that result under key. #fetch(key) called without a block returns the stored value under key if present, otherwise nil - it never raises merely because key has no stored value. Implement TallyingKeyStore < KeyStore, which additionally counts lookups: every call to #fetch increments #hits (an Integer reader, starting at 0) if key already had a stored value at the time of that call, or increments #misses (an Integer reader, starting at 0) otherwise - and #fetch on a TallyingKeyStore instance must otherwise behave exactly per KeyStore's #fetch contract above, honoring both the with-block and without-block forms."
+broken:
+  - id: requires_block_for_missing_key
+    misconception: "TallyingKeyStore#fetch always passes a wrapper block down to KeyStore#fetch so it can tally correctly, which works when a caller supplies its own block but strengthens the precondition for a missing key: calling fetch with no block on a key that was never stored now raises LocalJumpError instead of returning nil, breaking the base KeyStore contract that a missing key without a block never raises."
+  - id: swapped_hits_and_misses
+    misconception: "fetch behaves exactly like the base contract, but the tally is inverted: a key that was already stored increments #misses instead of #hits, and a key with no stored value increments #hits instead of #misses."
+  - id: mechanism_free
+    misconception: "TallyingKeyStore#initialize never calls super, so KeyStore's own storage is never set up and #store/#fetch break entirely on a fresh TallyingKeyStore, regardless of the tallying question."

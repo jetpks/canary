@@ -1,0 +1,11 @@
+category: "No structural reaching: only a collaborator's documented public protocol may be called, never its incidental internal shape"
+adapter: rspec
+provenance: authored
+statement: "Implement ShipmentAlert.new(recipient), constructed with a single positional collaborator. recipient must respond to #alert_address, returning the String address the alert should be sent to - no other method on recipient may be called by your implementation. #dispatch(message) returns the String \"#{recipient.alert_address}: #{message}\" (the address, then a colon, then a space, then message), computed by calling only #alert_address on recipient."
+broken:
+  - id: reaches_through_a_contacts_list
+    misconception: "recipients are assumed to always expose their address via a contacts collection, so #dispatch calls recipient.contacts.first.email instead of recipient.alert_address - working for a recipient shaped that way but raising NoMethodError for any recipient that only implements the documented alert_address protocol."
+  - id: wrong_separator
+    misconception: "#dispatch calls recipient.alert_address correctly but joins it to message with \" - \" instead of \": \", regardless of what recipient looks like."
+  - id: mechanism_free
+    misconception: "#dispatch calls recipient.address instead of recipient.alert_address, a plausible-sounding but wrong method name, so it raises NoMethodError for every recipient regardless of shape."

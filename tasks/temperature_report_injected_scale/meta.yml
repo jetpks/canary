@@ -1,0 +1,11 @@
+category: "Dependency injection: a constructor-supplied collaborator must be honored, not silently replaced by its own default"
+adapter: rspec
+provenance: authored
+statement: "Implement TemperatureReport.new(scale: TemperatureReport::Celsius.new) - a keyword argument scale that defaults to a new instance of TemperatureReport::Celsius (a class your solution must also define, nested under TemperatureReport) when the caller omits it. scale may be any object that responds to #convert(celsius_degrees) (returning the numeric temperature converted to that scale's unit) and #label (returning a short String naming the unit, e.g. \"C\"). #describe(celsius_degrees) returns \"#{scale.convert(celsius_degrees)}#{scale.label}\" - the converted value immediately followed by the label, computed via whichever scale the instance was constructed with, not always the default. TemperatureReport::Celsius#convert(celsius_degrees) returns celsius_degrees unchanged, and TemperatureReport::Celsius#label returns \"C\"."
+broken:
+  - id: ignores_injected_scale
+    misconception: "the scale: keyword is accepted and stored, but #describe builds a fresh TemperatureReport::Celsius.new internally instead of using the stored scale, so an injected non-default scale is silently ignored and every report reads as Celsius regardless of what was passed to the constructor."
+  - id: reversed_format_order
+    misconception: "the injected scale is honored correctly, but #describe interpolates label before the converted value instead of after, producing \"C20\" instead of \"20C\" regardless of which scale is in use."
+  - id: mechanism_free
+    misconception: "the injected scale is honored correctly, but #describe joins the converted value and the label with a space, producing \"20 C\" instead of \"20C\", since the exact adjacency was never a deliberate choice."
