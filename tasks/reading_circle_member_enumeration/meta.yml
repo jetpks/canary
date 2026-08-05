@@ -1,0 +1,11 @@
+category: "Protocol acceptance: a collaborator's returned enumerable must be walked via #each alone, never assumed to be an Array"
+adapter: minitest
+provenance: authored
+statement: "Implement ReadingCircle.new(directory), constructed with a single positional collaborator directory. directory must respond to #members, returning any object that responds to #each, yielding each member's name (a String) in a fixed order - no other method or class should be assumed of that returned object. #roster_size returns the Integer count of names yielded by enumerating directory.members. #greeting returns the String formed by joining every name yielded by directory.members with \", \" (comma space) in the order they are yielded - e.g. names yielded as \"Ada\" then \"Grace\" produce the greeting \"Ada, Grace\". Both #roster_size and #greeting may be called any number of times, and each reflects a fresh enumeration of directory.members at the time of that call."
+broken:
+  - id: indexes_members_like_an_array
+    misconception: "roster_size calls directory.members.length and greeting builds its result by indexing directory.members with [] across a numeric range, on the assumption that #members always hands back something Array-shaped - correct when directory.members happens to be a real Array, but raising NoMethodError against an each-only object that implements no #length or #[] at all."
+  - id: wrong_join_separator
+    misconception: "roster_size and greeting both enumerate directory.members correctly with #each regardless of its shape, but greeting joins the collected names with just \",\" (no following space) instead of \", \", regardless of what directory.members looks like."
+  - id: mechanism_free
+    misconception: "roster_size calls directory.members.size and greeting calls directory.members.join(\", \") directly, on the assumption that #members always hands back something Array-shaped - correct when directory.members happens to be a real Array, but raising NoMethodError against an each-only object that implements neither #size nor #join."
