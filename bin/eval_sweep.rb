@@ -252,7 +252,22 @@ module EvalSweep
     "z-ai/glm-5.2" => {reasoning: {effort: "low"}},
     "accounts/fireworks/models/deepseek-v4-flash" => {reasoning_effort: "low"},
     "openai/gpt-oss-120b" => {reasoning: {effort: "low"}},
-    "nvidia/nemotron-3-super-120b-a12b" => {reasoning: {effort: "low"}}
+    "nvidia/nemotron-3-super-120b-a12b" => {reasoning: {effort: "low"}},
+    # The studio arm needs the bottom of the scale, not "low" - same rationale
+    # as above (lowest effort that still leaves room for visible text under
+    # SWEEP_MAX_TOKENS), taken to its limit because on this model nothing
+    # short of off is enough. Measured live 2026-08-15 on the hidden arm's
+    # own attribute_bag_hash_equality prompt: with thinking on, the model
+    # ruminates over what the withheld tests might assert ("Could hidden
+    # tests check X. yes." repeated) for the full 16_384 tokens and emits
+    # content: null - a truncated non-score, never an answer. With
+    # reasoning_effort "none": 66 completion tokens, finish_reason "stop",
+    # and a solution that passes all six grader assertions. mlx-vlm treats
+    # "none"/"off"/"disabled"/"false"/"0" as disabling
+    # (server/request_normalization.py _DISABLED_REASONING_EFFORTS); "low"
+    # would leave thinking on and reproduce the truncation. The flat
+    # reasoning_effort form matches what that normalizer reads first.
+    "qwen3.8-27b-mxfp8" => {reasoning_effort: "none"}
   }.freeze
 
   # I26 (I25 F4): eval_sweep.rb never pinned OpenRouter routing, so every
@@ -380,9 +395,11 @@ module EvalSweep
         max_tokens: SWEEP_MAX_TOKENS, extra_body_by_model: extra_body_by_model
       )
     when :studio
+      extra_body_by_model = models.to_h { |model| [model, extra_body_for(model)] }
       Canary::Providers::OpenAICompat.new(
         base_url: PROVIDER_BASE_URLS.fetch(kind), api_key: STUDIO_API_KEY,
-        max_tokens: SWEEP_MAX_TOKENS, read_timeout: STUDIO_READ_TIMEOUT
+        max_tokens: SWEEP_MAX_TOKENS, read_timeout: STUDIO_READ_TIMEOUT,
+        extra_body_by_model: extra_body_by_model
       )
     else
       raise ArgumentError, "unknown provider kind: #{kind.inspect}"

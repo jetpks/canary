@@ -120,13 +120,20 @@ class EvalSweepTest < Minitest::Test
     assert_operator EvalSweep::STUDIO_READ_TIMEOUT, :>=, 1800
   end
 
-  # AC6: studio models get no THINKING_EFFORT override - the gateway's
-  # strict schema may reject the unknown body field, and reasoning is left
-  # at the model's own default.
-  def test_studio_models_have_no_thinking_effort_entry
-    EvalSweep::STUDIO_MODELS.each do |model|
+  # Was AC6 ("studio models get no THINKING_EFFORT override - the gateway's
+  # strict schema may reject the unknown body field"). That premise was
+  # speculative and is now falsified: sent live through the TLS edge
+  # 2026-08-15, the gateway forwards reasoning_effort untouched and the
+  # engine honours it. Only qwen3.8-27b-mxfp8 carries an entry, and it must
+  # DISABLE reasoning - with thinking on it ruminates over the hidden arm's
+  # withheld tests for all 16_384 tokens and returns content: null. The rest
+  # of the studio arm is left at the model's own default.
+  def test_only_the_mxfp8_studio_model_overrides_thinking_effort
+    (EvalSweep::STUDIO_MODELS - ["qwen3.8-27b-mxfp8"]).each do |model|
       refute EvalSweep::THINKING_EFFORT.key?(model), "#{model} unexpectedly has a THINKING_EFFORT entry"
     end
+
+    assert_equal({reasoning_effort: "none"}, EvalSweep::THINKING_EFFORT.fetch("qwen3.8-27b-mxfp8"))
   end
 
   # AC6: studio models get no PROVIDER_PINS entry - one backend exists by
@@ -137,12 +144,16 @@ class EvalSweepTest < Minitest::Test
     end
   end
 
-  # AC6: extra_body_for a studio model must stay a no-op merge, same as any
-  # other model with no THINKING_EFFORT/PROVIDER_PINS entry.
-  def test_extra_body_for_a_studio_model_is_empty
-    EvalSweep::STUDIO_MODELS.each do |model|
+  # extra_body_for stays a no-op merge for every studio model with no
+  # THINKING_EFFORT entry (studio models never carry a PROVIDER_PINS entry -
+  # one backend exists by construction), and carries exactly the disabling
+  # effort for the one that does.
+  def test_extra_body_for_studio_models_is_empty_except_the_mxfp8_override
+    (EvalSweep::STUDIO_MODELS - ["qwen3.8-27b-mxfp8"]).each do |model|
       assert_empty EvalSweep.extra_body_for(model)
     end
+
+    assert_equal({reasoning_effort: "none"}, EvalSweep.extra_body_for("qwen3.8-27b-mxfp8"))
   end
 
   # AC3: load_env! must not demand any credential for a studio-only model
