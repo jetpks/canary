@@ -84,7 +84,7 @@ module EvalSweep
   # (see .select_models).
   STUDIO_MODELS = [
     "qwen3.6-35b-a3b-4bit", "qwen3.6-35b-a3b-8bit", "qwen3-27b-optiq",
-    "qwen3-122b-a10b", "nemotron-3-super"
+    "qwen3-122b-a10b", "nemotron-3-super", "qwen3.8-27b-mxfp8"
   ].freeze
 
   # I29 R12 phase 1 Arm H: seven hosted consumer-class open-weight models
@@ -125,6 +125,7 @@ module EvalSweep
     "qwen3-27b-optiq" => :studio,
     "qwen3-122b-a10b" => :studio,
     "nemotron-3-super" => :studio,
+    "qwen3.8-27b-mxfp8" => :studio,
     "qwen/qwen3.6-27b" => :openrouter,
     "qwen/qwen3.6-35b-a3b" => :openrouter,
     "google/gemma-4-26b-a4b-it" => :openrouter,
@@ -155,6 +156,9 @@ module EvalSweep
   # OpenAICompat::DEFAULT_READ_TIMEOUT's 60s - this is a generous multiple of
   # that headroom, not a measured worst case.
   STUDIO_READ_TIMEOUT = 1800
+  # runner_concurrency's default when CANARY_STUDIO_CONCURRENCY is unset -
+  # see that method for why this is no longer 1.
+  DEFAULT_STUDIO_CONCURRENCY = 4
 
   # $/token. Anthropic prices current as of 2026-08-02 (Haiku 4.5 $1/$5 per
   # MTok in/out; Sonnet 5 $2/$10 through its 2026-08-31 introductory window,
@@ -189,6 +193,7 @@ module EvalSweep
     "qwen3-27b-optiq" => {input_token_price: 0.0, output_token_price: 0.0},
     "qwen3-122b-a10b" => {input_token_price: 0.0, output_token_price: 0.0},
     "nemotron-3-super" => {input_token_price: 0.0, output_token_price: 0.0},
+    "qwen3.8-27b-mxfp8" => {input_token_price: 0.0, output_token_price: 0.0},
     "qwen/qwen3.6-27b" => {input_token_price: 0.0000003, output_token_price: 0.0000032},
     "qwen/qwen3.6-35b-a3b" => {input_token_price: 0.0000002, output_token_price: 0.0000016},
     "google/gemma-4-26b-a4b-it" => {input_token_price: 0.00000012, output_token_price: 0.0000004},
@@ -492,13 +497,14 @@ module EvalSweep
   # back), and a single-provider model set (today's config) collapses to
   # exactly the one runner.call the pre-multi-provider code made.
   #
-  # I28: the studio gateway 502s (upstream EOFError) on any second
-  # provider call issued while another is in flight - every serially-
-  # issued request succeeded. :studio therefore runs its Runner at
-  # concurrency: 1 (Runner's own Async::Semaphore already enforces "one
-  # job's provider call at a time" at that bound - no new mechanism
-  # needed here). Every other provider kind keeps Runner's own
-  # DEFAULT_CONCURRENCY fan-out, unchanged.
+  # I28 pinned :studio's Runner to concurrency: 1, on a finding that the
+  # gateway 502'd (upstream EOFError) on any second in-flight request. That
+  # finding is stale: canary's workaround landed 2026-08-05, and the
+  # gateway's "no-more-wedging: single-flight swap + engine liveness" merged
+  # 2026-08-06 - one day later. Live re-measurement through the TLS edge on
+  # 2026-08-15 found 2, 4 and 8 concurrent completions all returned 200
+  # (4.92s / 2.33s / 3.10s total respectively, batched rather than
+  # serialized) - see runner_concurrency for the resulting knob.
   def self.run_arm(samplers:, tasks:, models:, k:, grader:, &on_record)
     models.group_by { |model| MODEL_PROVIDERS.fetch(model) }.flat_map do |kind, models_for_kind|
       runner = Canary::Eval::Runner.new(sampler: samplers.fetch(kind), concurrency: runner_concurrency(kind))
@@ -506,11 +512,18 @@ module EvalSweep
     end
   end
 
-  # :studio is the one provider kind whose gateway cannot tolerate
-  # overlapping requests (see run_arm) - every hosted kind keeps Runner's
-  # own default fan-out.
+  # :studio's concurrency is a configurable knob, not Runner's own
+  # DEFAULT_CONCURRENCY every hosted kind gets (see run_arm for why 1 is no
+  # longer required) - CANARY_STUDIO_CONCURRENCY overrides
+  # DEFAULT_STUDIO_CONCURRENCY the same way CANARY_SWEEP_SKIP overrides the
+  # model set (see .skipped_models), read fresh on every call rather than
+  # baked into a constant at load time.
+  def self.studio_concurrency
+    Integer(ENV["CANARY_STUDIO_CONCURRENCY"] || DEFAULT_STUDIO_CONCURRENCY)
+  end
+
   def self.runner_concurrency(kind)
-    kind == :studio ? 1 : Canary::Eval::Runner::DEFAULT_CONCURRENCY
+    kind == :studio ? studio_concurrency : Canary::Eval::Runner::DEFAULT_CONCURRENCY
   end
 
   def self.record_cost(record)

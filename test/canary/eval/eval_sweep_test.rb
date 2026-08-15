@@ -400,12 +400,13 @@ class EvalSweepTest < Minitest::Test
     end
   end
 
-  # I28 AC1: the studio gateway 502s on any second provider call issued
-  # while another is in flight - run_arm's :studio branch must therefore
-  # never let two of its provider calls overlap. Driven through run_arm
-  # itself (the same code path EvalSweep.run uses), against a fake
-  # provider that records the live in-flight count on every call.
-  def test_run_arm_never_overlaps_provider_calls_for_a_studio_model
+  # I28's overlap-prevention finding is stale (see run_arm's comment) -
+  # :studio now gets genuine fan-out through run_arm, same mechanism the
+  # hosted case below exercises, bounded by runner_concurrency(:studio)
+  # rather than pinned to 1. Driven through run_arm itself (the same code
+  # path EvalSweep.run uses), against a fake provider that records the live
+  # in-flight count on every call.
+  def test_run_arm_allows_concurrent_calls_for_a_studio_model
     concurrent = 0
     max_concurrent = 0
     fake = Canary::Providers::Fake.new do |model:, prompt:|
@@ -420,7 +421,8 @@ class EvalSweepTest < Minitest::Test
     records = EvalSweep.run_arm(samplers: {studio: build_fake_sampler(fake)}, tasks: [build_fixture_entry], models: [model], k: 5, grader: false)
 
     assert_equal 5, records.size
-    assert_equal 1, max_concurrent, "expected no overlap for a :studio model, saw #{max_concurrent} calls in flight at once"
+    assert_operator max_concurrent, :>, 1, "expected genuine overlap for a :studio model, saw #{max_concurrent} calls in flight at once"
+    assert_operator max_concurrent, :<=, EvalSweep.runner_concurrency(:studio)
   end
 
   # I28 AC2: hosted provider kinds must keep their existing fan-out
@@ -446,13 +448,25 @@ class EvalSweepTest < Minitest::Test
     assert_operator max_concurrent, :<=, Canary::Eval::Runner::DEFAULT_CONCURRENCY
   end
 
-  # I28: runner_concurrency itself - :studio pins to 1, every other kind
-  # keeps Runner's own default.
-  def test_runner_concurrency_pins_studio_to_one_and_leaves_other_kinds_at_the_default
-    assert_equal 1, EvalSweep.runner_concurrency(:studio)
+  # AC9: runner_concurrency itself - :studio now defaults above 1 (the I28
+  # pin this replaces is dead per run_arm's 2026-08-15 re-measurement),
+  # every other kind keeps Runner's own default.
+  def test_runner_concurrency_defaults_studio_above_one_and_leaves_other_kinds_at_the_default
+    assert_operator EvalSweep.runner_concurrency(:studio), :>, 1
+    assert_equal EvalSweep::DEFAULT_STUDIO_CONCURRENCY, EvalSweep.runner_concurrency(:studio)
     assert_equal Canary::Eval::Runner::DEFAULT_CONCURRENCY, EvalSweep.runner_concurrency(:anthropic)
     assert_equal Canary::Eval::Runner::DEFAULT_CONCURRENCY, EvalSweep.runner_concurrency(:openrouter)
     assert_equal Canary::Eval::Runner::DEFAULT_CONCURRENCY, EvalSweep.runner_concurrency(:fireworks)
+  end
+
+  # AC9: CANARY_STUDIO_CONCURRENCY overrides the default without editing the
+  # file, same mechanism as CANARY_SWEEP_SKIP.
+  def test_runner_concurrency_for_studio_is_settable_via_env
+    ENV["CANARY_STUDIO_CONCURRENCY"] = "6"
+
+    assert_equal 6, EvalSweep.runner_concurrency(:studio)
+  ensure
+    ENV.delete("CANARY_STUDIO_CONCURRENCY")
   end
 
   # AC1: a bare invocation must never pick up an Arm H model in either arm -
