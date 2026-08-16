@@ -313,7 +313,147 @@ class OpenAICompatTest < Minitest::Test
     refute_empty result.success.text
   end
 
+  # AC7/BRIEF §7.2: #chat is a wholly new seam alongside #sample, exercised
+  # the same offline-against-an-injected-transport way as every test above -
+  # no live network, no mocking the class under test.
+  def test_chat_with_tool_calls_returns_a_chat_turn_success
+    provider = build_provider(chat_tool_call_response)
+
+    result = provider.chat(model: "m", messages: [{role: "user", content: "hi"}], tools: [{type: "function", function: {name: "ruby_eval"}}])
+
+    assert result.success?
+    turn = result.success
+    assert_equal :tool_calls, turn.finish_reason
+    assert_equal 1, turn.tool_calls.size
+    call = turn.tool_calls.first
+    assert_equal "call-1", call.id
+    assert_equal "ruby_eval", call.name
+    assert_equal({code: "6 * 7"}, call.arguments)
+  end
+
+  def test_chat_with_finish_reason_stop_returns_a_chat_turn_with_no_tool_calls
+    provider = build_provider(response_for(finish_reason: "stop", content: "the answer"))
+
+    result = provider.chat(model: "m", messages: [{role: "user", content: "hi"}])
+
+    assert result.success?
+    assert_equal :stop, result.success.finish_reason
+    assert_empty result.success.tool_calls
+    assert_equal "the answer", result.success.message[:content]
+  end
+
+  def test_chat_with_finish_reason_length_is_a_truncated_failure
+    provider = build_provider(response_for(finish_reason: "length", content: "cut off"))
+
+    result = provider.chat(model: "m", messages: [{role: "user", content: "hi"}])
+
+    assert result.failure?
+    assert_equal :truncated, result.failure.reason
+  end
+
+  def test_chat_with_no_choices_is_a_malformed_response_failure
+    provider = build_provider({id: "x", choices: []})
+
+    result = provider.chat(model: "m", messages: [{role: "user", content: "hi"}])
+
+    assert result.failure?
+    assert_equal :malformed_response, result.failure.reason
+  end
+
+  def test_chat_with_an_empty_tool_calls_array_is_a_malformed_tool_call_failure
+    body = {
+      id: "x",
+      choices: [{index: 0, message: {role: "assistant", content: nil, tool_calls: []}, finish_reason: "tool_calls"}],
+      usage: {prompt_tokens: 1, completion_tokens: 1, total_tokens: 2}
+    }
+    provider = build_provider(body)
+
+    result = provider.chat(model: "m", messages: [{role: "user", content: "hi"}])
+
+    assert result.failure?
+    assert_equal :malformed_tool_call, result.failure.reason
+  end
+
+  def test_chat_with_unparseable_tool_call_arguments_is_a_malformed_tool_call_failure
+    body = {
+      id: "x",
+      choices: [{
+        index: 0,
+        message: {role: "assistant", content: nil, tool_calls: [{id: "c1", type: "function", function: {name: "ruby_eval", arguments: "{not json"}}]},
+        finish_reason: "tool_calls"
+      }],
+      usage: {prompt_tokens: 1, completion_tokens: 1, total_tokens: 2}
+    }
+    provider = build_provider(body)
+
+    result = provider.chat(model: "m", messages: [{role: "user", content: "hi"}])
+
+    assert result.failure?
+    assert_equal :malformed_tool_call, result.failure.reason
+  end
+
+  def test_chat_with_a_tool_call_missing_an_id_is_a_malformed_tool_call_failure
+    body = {
+      id: "x",
+      choices: [{
+        index: 0,
+        message: {role: "assistant", content: nil, tool_calls: [{type: "function", function: {name: "ruby_eval", arguments: "{}"}}]},
+        finish_reason: "tool_calls"
+      }],
+      usage: {prompt_tokens: 1, completion_tokens: 1, total_tokens: 2}
+    }
+    provider = build_provider(body)
+
+    result = provider.chat(model: "m", messages: [{role: "user", content: "hi"}])
+
+    assert result.failure?
+    assert_equal :malformed_tool_call, result.failure.reason
+  end
+
+  def test_chat_sends_tools_and_tool_choice_in_the_request_body
+    calls = []
+    transport = ->(uri:, headers:, body:) {
+      calls << body
+      fake_response(200, response_for(finish_reason: "stop", content: "hi"))
+    }
+    provider = Canary::Providers::OpenAICompat.new(base_url: BASE_URL, api_key: "sk-test-key", transport: transport)
+    tools = [{type: "function", function: {name: "ruby_eval"}}]
+
+    provider.chat(model: "m", messages: [{role: "user", content: "hi"}], tools: tools, tool_choice: "required")
+
+    sent = JSON.parse(calls.first, symbolize_names: true)
+    assert_equal tools, sent[:tools]
+    assert_equal "required", sent[:tool_choice]
+  end
+
+  def test_chat_omits_tools_and_tool_choice_when_not_given
+    calls = []
+    transport = ->(uri:, headers:, body:) {
+      calls << body
+      fake_response(200, response_for(finish_reason: "stop", content: "hi"))
+    }
+    provider = Canary::Providers::OpenAICompat.new(base_url: BASE_URL, api_key: "sk-test-key", transport: transport)
+
+    provider.chat(model: "m", messages: [{role: "user", content: "hi"}])
+
+    sent = JSON.parse(calls.first, symbolize_names: true)
+    refute sent.key?(:tools)
+    refute sent.key?(:tool_choice)
+  end
+
   private
+
+  def chat_tool_call_response
+    {
+      id: "chatcmpl-1", object: "chat.completion", model: "m",
+      choices: [{
+        index: 0,
+        message: {role: "assistant", content: nil, tool_calls: [{type: "function", index: 0, id: "call-1", function: {name: "ruby_eval", arguments: "{\"code\": \"6 * 7\"}"}}]},
+        finish_reason: "tool_calls"
+      }],
+      usage: {prompt_tokens: 10, completion_tokens: 5, total_tokens: 15}
+    }
+  end
 
   def response_for(finish_reason:, content:, id: "chatcmpl-fixture", prompt_tokens: 10, completion_tokens: 20)
     {
