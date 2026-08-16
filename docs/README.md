@@ -20,6 +20,10 @@ the tutorial if you're new here.
   without spending anything.
 - [Run the server](how-to/run-the-server.md) — boot `bin/canary-server` and
   call `POST /v1/rollouts` or `POST /v1/eval` over a real loopback socket.
+- [Run the tool loop](how-to/run-the-tool-loop.md) — `bin/canary-tool-loop`,
+  the first end-to-end agentic loop on this stack: a chat model calls
+  `ruby_eval`/`run_tests` as tools against a real `bin/canary-server` and
+  loops to a final answer.
 
 ## Reference
 

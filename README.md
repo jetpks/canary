@@ -100,6 +100,12 @@ embody one named misconception.
   against a task, `POST /v1/eval` runs arbitrary Ruby and reports what
   happened — the primitive `run_tests` submits an answer, `ruby_eval`
   observes the world (`docs/reference/wire-protocol.md`).
+- **`Canary::ToolLoop`** (`lib/canary/tool_loop.rb`) — the first end-to-end
+  agentic loop on this stack: a chat model gets `ruby_eval`/`run_tests` as
+  OpenAI tools, issues `tool_calls`, has each one executed against a real
+  `bin/canary-server` over loopback HTTP, and loops on the wire's typed JSON
+  result until it answers or a turn cap is reached
+  (`docs/how-to/run-the-tool-loop.md`).
 
 ## Running the test suite
 
