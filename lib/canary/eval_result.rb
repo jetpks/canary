@@ -17,7 +17,7 @@ module Canary
   # only (mirrors RolloutResult#error) and, like RolloutResult#coverage, is
   # not part of the wire response - see Server#serialize_eval.
   EvalResult = Data.define(:outcome, :value, :stdout, :stderr, :exception, :error) do
-    def initialize(outcome: :ok, value: nil, stdout: "", stderr: "", exception: nil, error: nil)
+    def initialize(outcome: :ok, value: nil, stdout: EvalResult::Stream.new(text: "", truncated: false), stderr: EvalResult::Stream.new(text: "", truncated: false), exception: nil, error: nil)
       super
     end
 
@@ -57,5 +57,14 @@ module Canary
     # never the exception object itself (and never a backtrace - the wire
     # carries none, so there is nothing from it left to sanitize).
     Raised = Data.define(:class_name, :message)
+
+    # A bounded stand-in for captured stdout/stderr: the captured text
+    # (never longer than Pool::EVAL_OUTPUT_LIMIT) plus whether the real
+    # output ran longer and got cut. +truncated+ is computed once, in the
+    # child, where the slice happens (Pool#bounded_eval_output) - never
+    # re-derived here from the text's length, so a stream that happens to
+    # measure exactly EVAL_OUTPUT_LIMIT after some other transform can't be
+    # mistaken for one that was cut.
+    Stream = Data.define(:text, :truncated)
   end
 end

@@ -91,7 +91,8 @@ class Canary::Server::SocketTest < Minitest::Test
             assert_equal "ok", body["outcome"]
             assert_equal "Integer", body.dig("value", "class")
             assert_equal "42", body.dig("value", "inspect")
-            assert_match(/hi/, body["stdout"])
+            assert_match(/hi/, body.dig("stdout", "text"))
+            refute body.dig("stdout", "truncated")
             assert_equal "sock-eval-1", body["request_id"]
           ensure
             response&.close

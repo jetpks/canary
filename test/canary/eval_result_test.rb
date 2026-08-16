@@ -7,8 +7,10 @@ class EvalResultTest < Minitest::Test
     assert result.ok?
     assert_nil result.value
     assert_nil result.exception
-    assert_equal "", result.stdout
-    assert_equal "", result.stderr
+    assert_equal "", result.stdout.text
+    refute result.stdout.truncated
+    assert_equal "", result.stderr.text
+    refute result.stderr.truncated
     assert_nil result.error
   end
 
@@ -34,16 +36,24 @@ class EvalResultTest < Minitest::Test
     assert_equal "boom", raised.message
   end
 
+  def test_stream_carries_its_text_and_truncated_flag
+    stream = Canary::EvalResult::Stream.new(text: "hi\n", truncated: false)
+
+    assert_equal "hi\n", stream.text
+    refute stream.truncated
+  end
+
   def test_a_result_and_its_nested_value_survive_a_marshal_round_trip
     result = Canary::EvalResult.new(
       outcome: :ok,
       value: Canary::EvalResult::Value.new(class_name: "Integer", inspect_text: "42", truncated: false),
-      stdout: "hi\n"
+      stdout: Canary::EvalResult::Stream.new(text: "hi\n", truncated: false)
     )
 
     round_tripped = Marshal.load(Marshal.dump(result))
 
     assert_equal result, round_tripped
     assert_equal "Integer", round_tripped.value.class_name
+    assert_equal "hi\n", round_tripped.stdout.text
   end
 end

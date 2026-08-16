@@ -76,8 +76,12 @@ module Canary
 
     # Same reasoning as EVAL_VALUE_INSPECT_LIMIT, for captured stdout/stderr:
     # bounded so a submission that floods output can't grow the wire
-    # payload without limit.
-    EVAL_OUTPUT_LIMIT = 64 * 1024 # bytes
+    # payload without limit. 64 MiB, not 64 KiB - generous enough that a
+    # legitimate submission's output is never mistaken for a flood. Unlike
+    # +value+, the cut is reported rather than silent: #bounded_eval_output
+    # flags it on the wire (EvalResult::Stream#truncated) instead of the
+    # caller having to guess from a stream that merely looks complete.
+    EVAL_OUTPUT_LIMIT = 64 * 1024 * 1024 # bytes
 
     # Preloads every requested adapter's framework in the parent process.
     def initialize(adapters: ADAPTERS.keys)
@@ -410,9 +414,9 @@ module Canary
     end
 
     def bounded_eval_output(text)
-      return text unless text.bytesize > EVAL_OUTPUT_LIMIT
-
-      text.byteslice(0, EVAL_OUTPUT_LIMIT).scrub
+      truncated = text.bytesize > EVAL_OUTPUT_LIMIT
+      text = text.byteslice(0, EVAL_OUTPUT_LIMIT).scrub if truncated
+      EvalResult::Stream.new(text: text, truncated: truncated)
     end
 
     # A submission that calls the bare Coverage.result itself stops
