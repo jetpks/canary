@@ -15,7 +15,21 @@ module Canary
     # against a real bin/canary-server, termination - gets proven without
     # spending on a live model. A Protocol::HTTP::Middleware-shaped handler,
     # the same seam Canary::Server itself is.
+    #
+    # A conversation's position in its script is read off the request
+    # itself - the number of "tool"-role messages already in +messages+ -
+    # rather than tracked in shared mutable state: with several
+    # Canary::LoopBench conversations in flight against one gateway
+    # instance, a global counter would hand one conversation's turn to
+    # another's request. Every SCRIPTS entry below already advances one
+    # step per tool result, so counting tool messages reproduces the same
+    # sequence a single in-flight conversation always got.
     class ScriptedGateway
+      # Long enough that several conversations' requests are reliably still
+      # in flight together (making concurrent overlap unambiguous in a
+      # transcript's started_at/finished_at), short enough not to slow the
+      # offline gates down noticeably.
+      RESPONSE_DELAY = 0.05
       # A generically-valid Ruby submission (borrowed from the server_fixture
       # fixture task's own passing submission, test/canary/server/socket_test.rb)
       # - reused as the canned run_tests call's argument regardless of which
@@ -79,7 +93,6 @@ module Canary
 
       def initialize(script:)
         @responses = SCRIPTS.fetch(script)
-        @index = 0
         @received_tool_choices = []
       end
 
@@ -88,8 +101,9 @@ module Canary
 
         body = JSON.parse(request.read, symbolize_names: true)
         @received_tool_choices << body[:tool_choice]
-        response = @responses.call(@index)
-        @index += 1
+        index = body[:messages].count { |message| message[:role] == "tool" }
+        sleep RESPONSE_DELAY
+        response = @responses.call(index)
 
         json_response(200, response)
       end
