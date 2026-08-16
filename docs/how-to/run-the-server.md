@@ -1,10 +1,10 @@
-# How-to: run the server and call `POST /v1/rollouts`
+# How-to: run the server and call `POST /v1/rollouts` or `POST /v1/eval`
 
-`Canary::Server` (`lib/canary/server.rb`) is a single-shot wire surface: one
-verb, one resource, no session. `bin/canary-server` boots it behind a
-bearer-token auth middleware on a real socket. Everything below is offline —
-no model call, no credential beyond a token you make up yourself, one
-locally-graded submission.
+`Canary::Server` (`lib/canary/server.rb`) is a single-shot wire surface: two
+verbs, no session. `bin/canary-server` boots it behind a bearer-token auth
+middleware on a real socket. Everything below is offline — no model call, no
+credential beyond a token you make up yourself, one locally-graded
+submission or one locally-evaluated snippet.
 
 ## Boot it
 
@@ -89,6 +89,36 @@ curl -s -o /dev/null -w "%{http_code}\n" -X POST http://127.0.0.1:9293/v1/rollou
 
 Observed output: `401`.
 
+## Call `POST /v1/eval`
+
+A request body needs `code` (a string of Ruby to run); `timeout` is
+optional, `request_id` is echoed back verbatim if present. No `task_name`,
+no adapter, no grading — just run the code and report what happened.
+
+```console
+curl -s -X POST http://127.0.0.1:9293/v1/eval \
+  -H "authorization: Bearer docs-demo-token" \
+  -H "content-type: application/json" \
+  -d '{"code":"Vector = Struct.new(:x, :y, keyword_init: true) do\n  def +(other)\n    Vector.new(x: x + other.x, y: y + other.y)\n  end\nend\n\nputs Vector.new(x: 1, y: 2) + Vector.new(x: 3, y: 4)\nVector.new(x: 1, y: 2) + Vector.new(x: 3, y: 4)\n","request_id":"docs-demo-eval-1"}'
+```
+
+Observed response (real round trip):
+
+```json
+{
+  "outcome": "ok",
+  "value": {
+    "class": "Vector",
+    "inspect": "#<struct Vector x=4, y=6>",
+    "truncated": false
+  },
+  "stdout": "#<struct Vector x=4, y=6>\n",
+  "stderr": "",
+  "exception": null,
+  "request_id": "docs-demo-eval-1"
+}
+```
+
 Full request/response field reference:
 [`../reference/wire-protocol.md`](../reference/wire-protocol.md).
 
@@ -98,9 +128,9 @@ Full request/response field reference:
   Falcon container/service DSL — the pool's preload cost would otherwise be
   paid once per core for nothing (`bin/canary-server`'s own comment).
 - Concurrency is bounded (`Canary::Server::DEFAULT_CONCURRENCY`, matching
-  `Canary::Eval::Runner`'s own reasoning): every accepted request forks two
-  OS processes for its rollout, so unbounded concurrent connections would
-  fork-bomb the host.
+  `Canary::Eval::Runner`'s own reasoning): every accepted request, rollout or
+  eval alike, forks two OS processes and shares the same semaphore budget,
+  so unbounded concurrent connections would fork-bomb the host.
 - A caller-supplied `timeout` is clamped to `Canary::Server::MAX_TIMEOUT`
   (four times `Canary::Pool::DEFAULT_TIMEOUT`) so a request can't hold a
   fork slot open indefinitely.

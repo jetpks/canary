@@ -94,9 +94,22 @@ embody one named misconception.
   response that cuts off mid-construct — one the prefilter's own parser
   can't finish parsing — is excluded from scoring, and even that is recorded
   as an explicit non-score reason rather than silently dropped.
-- **`Canary::Server`** (`lib/canary/server.rb`) — a single-shot wire surface,
-  `POST /v1/rollouts` over HTTP/1.1, for scoring one submission per request
-  without a Ruby process in the caller.
+- **`Canary::Server`** (`lib/canary/server.rb`) — a single-shot wire surface
+  over HTTP/1.1, for scoring one submission or running one snippet without a
+  Ruby process in the caller: `POST /v1/rollouts` grades a submission
+  against a task, `POST /v1/eval` runs arbitrary Ruby and reports what
+  happened — the primitive `run_tests` submits an answer, `ruby_eval`
+  observes the world (`docs/reference/wire-protocol.md`).
+- **`Canary::ToolLoop`** (`lib/canary/tool_loop.rb`) — the first end-to-end
+  agentic loop on this stack: a chat model gets `ruby_eval`/`run_tests` as
+  OpenAI tools, issues `tool_calls`, has each one executed against a real
+  `bin/canary-server` over loopback HTTP, and loops on the wire's typed JSON
+  result until it answers or a turn cap is reached
+  (`docs/how-to/run-the-tool-loop.md`).
+- **`Canary::LoopBench`** (`lib/canary/loop_bench.rb`) — runs several
+  `Canary::ToolLoop` conversations concurrently, as fibers in one Async
+  reactor, against one model, and summarizes their per-turn latency
+  (`docs/how-to/measure-turn-latency.md`).
 
 ## Running the test suite
 

@@ -1,5 +1,6 @@
 require_relative "canary/version"
 require_relative "canary/rollout_result"
+require_relative "canary/eval_result"
 require_relative "canary/adapters/minitest_adapter"
 require_relative "canary/adapters/rspec_adapter"
 require_relative "canary/pool"
@@ -16,6 +17,8 @@ require_relative "canary/eval/record"
 require_relative "canary/eval/report"
 require_relative "canary/eval/runner"
 require_relative "canary/server"
+require_relative "canary/tool_loop"
+require_relative "canary/loop_bench"
 
 module Canary
 end

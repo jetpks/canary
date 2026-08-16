@@ -63,6 +63,24 @@ before any assertion runs, coverage corruption that would otherwise destroy
 a genuine pass, and a deleted or modified grader file (reported `:invalid`,
 never scored).
 
+## `POST /v1/eval` runs arbitrary Ruby with none of `/v1/rollouts`' gates
+
+`POST /v1/eval` (`Canary::Pool#eval_code`) shares `/v1/rollouts`' exact
+fork/relay/timeout machinery and process-isolation boundary — everything
+above about fork isolating memory, not disk, and about the four accepted
+tamper classes, applies to it identically. It is a strictly narrower
+surface in one sense (no adapter, no grading, no task context to tamper
+with) and a strictly wider one in another: `/v1/rollouts` always runs a
+submission through `Canary::Prefilter` first (a Prism parse, and optionally
+a RuboCop Lint pass) before it ever reaches a fork; `/v1/eval` has no
+prefilter at all, by design: observation is not submission, and gating an
+eval the same way a graded submission is gated would misrepresent what the
+caller asked for. Every
+request to `/v1/eval` runs its exact code in a forked child with no static
+check ahead of it, whatever that code does — the same forked-child model
+`/v1/rollouts` relies on, offered with one less layer between the caller
+and a live Ruby interpreter.
+
 ## No containment claim
 
 This work is open and ongoing — nothing in this repo should be read as a

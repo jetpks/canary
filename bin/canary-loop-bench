@@ -1,0 +1,95 @@
+#!/usr/bin/env ruby
+
+require_relative "../lib/canary"
+require "async"
+require "optparse"
+require "net/http"
+require "fileutils"
+
+# Boots nothing itself, same as bin/canary-tool-loop: both the model edge
+# and the tool edge - a real bin/canary-server - are the caller's job. Runs
+# --concurrency Canary::ToolLoop conversations concurrently through
+# Canary::LoopBench and writes --out/summary.json - the raw agentic-turn-
+# latency and prefix-cache instrument BRIEF §7.6 asks for, not a scoring
+# run: no seed is ever sent, and no pass@k or correctness claim is made
+# anywhere here (Amendment 2).
+#
+# One invocation is one arm - one --model, one --concurrency. A loop's own
+# outcome (including loop_error) is data, not a process failure: this exits
+# non-zero only for an operational failure (bad config, an unwritable --out,
+# a transport dead before any loop even started).
+DEFAULT_TASK = Canary::LoopBench::DEFAULT_TASK
+# The studio gateway ignores auth (bin/eval_sweep.rb precedent) - a
+# placeholder is fine when CANARY_TOOL_LOOP_API_KEY isn't set.
+DEFAULT_MODEL_API_KEY = "canary-tool-loop-placeholder-key"
+# A drafter-less 4096-token turn plus a cold engine swap (the first request
+# naming a newly-loaded alias triggers it, serialized gateway-side) can run
+# many minutes - well above bin/canary-tool-loop's own 300s, which never
+# has to pay a swap for its single fixed-alias run.
+MODEL_READ_TIMEOUT = 900
+METRICS_READ_TIMEOUT = 30
+
+options = {
+  tasks: [],
+  concurrency: 1,
+  base_url: nil,
+  model: nil,
+  canary_url: nil,
+  max_turns: Canary::ToolLoop::DEFAULT_MAX_TURNS,
+  tool_choice: "auto",
+  max_tokens: Canary::Providers::OpenAICompat::DEFAULT_MAX_TOKENS,
+  out: nil,
+  metrics_url: nil
+}
+
+OptionParser.new do |parser|
+  parser.on("--model ALIAS", "Model id/alias to request") { |v| options[:model] = v }
+  parser.on("--concurrency N", Integer, "Number of concurrent ToolLoop conversations (default 1)") { |v| options[:concurrency] = v }
+  parser.on("--task NAME", "Task to run (repeatable, round-robin across loops; default #{DEFAULT_TASK})") { |v| options[:tasks] << v }
+  parser.on("--base-url URL", "Model edge base URL (an OpenAI-compatible /v1)") { |v| options[:base_url] = v }
+  parser.on("--canary-url URL", "Tool edge base URL (a bin/canary-server)") { |v| options[:canary_url] = v }
+  parser.on("--max-turns N", Integer, "Turn cap per loop (default #{options[:max_turns]})") { |v| options[:max_turns] = v }
+  parser.on("--tool-choice CHOICE", %w[auto required], "First-turn tool_choice (default auto)") { |v| options[:tool_choice] = v }
+  parser.on("--max-tokens N", Integer, "Per-request max_tokens (default #{options[:max_tokens]})") { |v| options[:max_tokens] = v }
+  parser.on("--out DIR", "Directory for transcripts + summary.json") { |v| options[:out] = v }
+  parser.on("--metrics-url URL", "Optional /metrics endpoint, snapshotted before/after the arm") { |v| options[:metrics_url] = v }
+end.parse!(ARGV)
+
+abort "--model is required" unless options[:model]
+abort "--base-url is required" unless options[:base_url]
+abort "--canary-url is required" unless options[:canary_url]
+abort "--out is required" unless options[:out]
+
+options[:tasks] = [DEFAULT_TASK] if options[:tasks].empty?
+
+canary_token = ENV["CANARY_SERVER_TOKEN"]
+abort "CANARY_SERVER_TOKEN must be set" if canary_token.to_s.empty?
+
+model_api_key = ENV["CANARY_TOOL_LOOP_API_KEY"] || DEFAULT_MODEL_API_KEY
+
+all_entries = Canary::TaskRepo.all
+entries = options[:tasks].map { |name| all_entries.find { |candidate| candidate.name == name } || abort("unknown task #{name.inspect}") }
+
+def fetch_metrics(url)
+  uri = URI(url)
+  Net::HTTP.start(uri.host, uri.port, use_ssl: uri.scheme == "https", open_timeout: 10, read_timeout: METRICS_READ_TIMEOUT) { |http| http.get(uri).body }
+end
+
+FileUtils.mkdir_p(options[:out])
+File.write(File.join(options[:out], "metrics-before.txt"), fetch_metrics(options[:metrics_url])) if options[:metrics_url]
+
+chat_provider = Canary::Providers::OpenAICompat.new(base_url: options[:base_url], api_key: model_api_key, read_timeout: MODEL_READ_TIMEOUT)
+canary_client = Canary::ToolLoop::CanaryClient.new(base_url: options[:canary_url], token: canary_token)
+
+bench = Canary::LoopBench.new(
+  chat_provider: chat_provider, canary_client: canary_client, model: options[:model],
+  entries: entries, concurrency: options[:concurrency], out_dir: options[:out],
+  max_turns: options[:max_turns], tool_choice: options[:tool_choice], max_tokens: options[:max_tokens]
+)
+
+loops = bench.call
+
+File.write(File.join(options[:out], "metrics-after.txt"), fetch_metrics(options[:metrics_url])) if options[:metrics_url]
+
+loops.each { |loop_summary| puts "#{loop_summary["loop_id"]}: #{loop_summary["outcome"]} (#{loop_summary["task"]})" }
+puts "SUMMARY: #{File.join(options[:out], "summary.json")}"
