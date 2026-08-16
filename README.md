@@ -106,6 +106,10 @@ embody one named misconception.
   `bin/canary-server` over loopback HTTP, and loops on the wire's typed JSON
   result until it answers or a turn cap is reached
   (`docs/how-to/run-the-tool-loop.md`).
+- **`Canary::LoopBench`** (`lib/canary/loop_bench.rb`) — runs several
+  `Canary::ToolLoop` conversations concurrently, as fibers in one Async
+  reactor, against one model, and summarizes their per-turn latency
+  (`docs/how-to/measure-turn-latency.md`).
 
 ## Running the test suite
 

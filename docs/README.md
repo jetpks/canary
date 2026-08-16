@@ -24,6 +24,10 @@ the tutorial if you're new here.
   the first end-to-end agentic loop on this stack: a chat model calls
   `ruby_eval`/`run_tests` as tools against a real `bin/canary-server` and
   loops to a final answer.
+- [Measure turn latency](how-to/measure-turn-latency.md) — `bin/canary-loop-bench`,
+  several concurrent `Canary::ToolLoop` conversations against one model,
+  measuring per-turn latency and the studio gateway's prefix-cache behavior
+  under interleaved load.
 
 ## Reference
 

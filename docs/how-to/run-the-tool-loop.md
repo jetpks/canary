@@ -109,3 +109,5 @@ edges (no mocking either collaborator).
   passed. Nothing here computes or claims a pass@k, a scoring comparison,
   or any other benchmark number; this is plumbing proof that the loop
   walks the real wire end to end, not a measurement of model capability.
+  For actual per-turn latency and concurrent prefix-cache behavior, see
+  [`measure-turn-latency.md`](measure-turn-latency.md).

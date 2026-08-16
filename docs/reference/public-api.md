@@ -26,6 +26,7 @@ a link to its own file for the real doc comment.
 | `Canary::Eval::Runner` | `lib/canary/eval/runner.rb` | render → sample → extract → verify, fanned out under a bounded `Async::Semaphore`. |
 | `Canary::Server`, `Canary::Server::Auth`, `Canary::Server::Config` | `lib/canary/server.rb`, `lib/canary/server/` | the `POST /v1/rollouts` and `POST /v1/eval` wire surface — see [`wire-protocol.md`](wire-protocol.md). |
 | `Canary::ToolLoop`, `Canary::ToolLoop::CanaryClient` | `lib/canary/tool_loop.rb` | drives a chat model through `Providers::OpenAICompat#chat` with `ruby_eval`/`run_tests` bound as OpenAI tools, executing every tool call against a real `bin/canary-server` over loopback HTTP — see [`../how-to/run-the-tool-loop.md`](../how-to/run-the-tool-loop.md). |
+| `Canary::LoopBench` | `lib/canary/loop_bench.rb` | runs several `Canary::ToolLoop` conversations concurrently, as fibers in one Async reactor, and summarizes their per-turn latency into `summary.json` — see [`../how-to/measure-turn-latency.md`](../how-to/measure-turn-latency.md). |
 
 Two more live under `bin/`, not `lib/`, and are not part of `require
 "canary"`: `bin/canary-server` (boots `Canary::Server` on a real socket) and
@@ -33,4 +34,6 @@ Two more live under `bin/`, not `lib/`, and are not part of `require
 see [`../how-to/run-a-sweep.md`](../how-to/run-a-sweep.md)). A third,
 `bin/canary-tool-loop`, boots neither server itself — it drives
 `Canary::ToolLoop` against a model edge and a tool edge the caller already
-has running (see the how-to above).
+has running (see the how-to above). A fourth, `bin/canary-loop-bench`,
+likewise boots neither edge — it drives `Canary::LoopBench` against them
+(see [`../how-to/measure-turn-latency.md`](../how-to/measure-turn-latency.md)).
