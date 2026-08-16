@@ -84,7 +84,8 @@ module EvalSweep
   # (see .select_models).
   STUDIO_MODELS = [
     "qwen3.6-35b-a3b-4bit", "qwen3.6-35b-a3b-8bit", "qwen3-27b-optiq",
-    "qwen3-122b-a10b", "nemotron-3-super", "qwen3.8-27b-mxfp8-concurrent4"
+    "qwen3-122b-a10b", "nemotron-3-super", "qwen3.8-27b-mxfp8-concurrent4",
+    "qwen3.8-27b-mxfp8-concurrent1"
   ].freeze
 
   # I29 R12 phase 1 Arm H: seven hosted consumer-class open-weight models
@@ -126,6 +127,7 @@ module EvalSweep
     "qwen3-122b-a10b" => :studio,
     "nemotron-3-super" => :studio,
     "qwen3.8-27b-mxfp8-concurrent4" => :studio,
+    "qwen3.8-27b-mxfp8-concurrent1" => :studio,
     "qwen/qwen3.6-27b" => :openrouter,
     "qwen/qwen3.6-35b-a3b" => :openrouter,
     "google/gemma-4-26b-a4b-it" => :openrouter,
@@ -194,6 +196,7 @@ module EvalSweep
     "qwen3-122b-a10b" => {input_token_price: 0.0, output_token_price: 0.0},
     "nemotron-3-super" => {input_token_price: 0.0, output_token_price: 0.0},
     "qwen3.8-27b-mxfp8-concurrent4" => {input_token_price: 0.0, output_token_price: 0.0},
+    "qwen3.8-27b-mxfp8-concurrent1" => {input_token_price: 0.0, output_token_price: 0.0},
     "qwen/qwen3.6-27b" => {input_token_price: 0.0000003, output_token_price: 0.0000032},
     "qwen/qwen3.6-35b-a3b" => {input_token_price: 0.0000002, output_token_price: 0.0000016},
     "google/gemma-4-26b-a4b-it" => {input_token_price: 0.00000012, output_token_price: 0.0000004},
@@ -253,20 +256,35 @@ module EvalSweep
     "accounts/fireworks/models/deepseek-v4-flash" => {reasoning_effort: "low"},
     "openai/gpt-oss-120b" => {reasoning: {effort: "low"}},
     "nvidia/nemotron-3-super-120b-a12b" => {reasoning: {effort: "low"}},
-    # Used to disable reasoning wholesale here (reasoning_effort: "none") -
-    # measured live 2026-08-15, thinking left on ran the model out the full
-    # 16_384-token budget rummaging over what the withheld tests might assert
-    # and returned content: null. That workaround is now obsolete: the
-    # qwen3.8-27b-mxfp8-concurrent4 registry entry launches this engine with
-    # its own thinking_budget (512, gateway lane, same date), which forces the
-    # model out of its reasoning block and into the answer server-side -
-    # measured finish_reason "stop" with a complete solution at every budget
-    # tried (256/512/1024/2048). That budget is mutually exclusive with
-    # speculative decoding in the server, which concurrent4 also has detached,
-    # so the bound is enforced upstream of this request either way. Left as an
-    # explicit empty fragment, not a missing key, so this stays the one arm
-    # whose extra_body_for is a documented no-op rather than an accidental one.
-    "qwen3.8-27b-mxfp8-concurrent4" => {}
+    # Two measured operating points over the same checkpoint, kept side by
+    # side for head-to-head comparison rather than one superseding the
+    # other - the human call after both were scored was to keep both
+    # regardless of which came out ahead.
+    #
+    # concurrent4 (batch point, drafter detached, max_num_seqs: 4): the
+    # registry entry launches this engine with its own thinking_budget (512,
+    # gateway lane), which forces the model out of its reasoning block and
+    # into the answer server-side - measured finish_reason "stop" with a
+    # complete solution at every budget tried (256/512/1024/2048). That
+    # budget is mutually exclusive with speculative decoding in the server,
+    # which concurrent4 also has detached, so the bound is enforced upstream
+    # of this request either way. Left as an explicit empty fragment, not a
+    # missing key, so this stays a documented no-op rather than an
+    # accidental one.
+    #
+    # concurrent1 (interactive point, speculative drafter attached,
+    # max_num_seqs: 1): its registry sibling cannot accept a thinking_budget
+    # at all - the server raises per request when both a drafter and a
+    # thinking budget are present - so request-side suppression
+    # (reasoning_effort: "none") is the only bound available on this arm.
+    # Measured live 2026-08-15 with thinking left on: the model ran out the
+    # full 16_384-token budget rummaging over what the withheld tests might
+    # assert and returned content: null. reasoning_effort: "none" is what
+    # produced the committed results/run-20260815T215441Z/ arm (combined
+    # pass rate 0.8636, 0 runaways) - dropping or approximating this
+    # fragment measures a different arm than the one that's committed.
+    "qwen3.8-27b-mxfp8-concurrent4" => {},
+    "qwen3.8-27b-mxfp8-concurrent1" => {reasoning_effort: "none"}
   }.freeze
 
   # I26 (I25 F4): eval_sweep.rb never pinned OpenRouter routing, so every
