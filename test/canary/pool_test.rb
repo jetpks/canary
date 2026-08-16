@@ -77,8 +77,31 @@ class PoolTest < Minitest::Test
     result = @pool.eval_code(code: "$stdout.puts :out_line; $stderr.puts :err_line")
 
     assert result.ok?
-    assert_match(/out_line/, result.stdout)
-    assert_match(/err_line/, result.stderr)
+    assert_match(/out_line/, result.stdout.text)
+    refute result.stdout.truncated
+    assert_match(/err_line/, result.stderr.text)
+    refute result.stderr.truncated
+  end
+
+  def test_eval_code_output_under_the_cap_is_not_truncated
+    result = @pool.eval_code(code: %(print("a" * 1_048_576); $stderr.print("s")), timeout: 15)
+
+    assert result.ok?
+    assert_equal 1_048_576, result.stdout.text.bytesize
+    refute result.stdout.truncated
+    assert_equal "s", result.stderr.text
+    refute result.stderr.truncated
+  end
+
+  def test_eval_code_output_over_the_cap_is_truncated_per_stream
+    limit = Canary::Pool::EVAL_OUTPUT_LIMIT
+    result = @pool.eval_code(code: %(print("x" * #{limit + 1}); $stderr.print("e")), timeout: 15)
+
+    assert result.ok?
+    assert_equal limit, result.stdout.text.bytesize
+    assert result.stdout.truncated
+    assert_equal "e", result.stderr.text
+    refute result.stderr.truncated
   end
 
   def test_eval_code_reports_a_raised_standard_error_as_outcome_raised

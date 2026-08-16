@@ -237,8 +237,8 @@ module Canary
       {
         outcome: result.outcome,
         value: result.value && serialize_eval_value(result.value),
-        stdout: result.stdout,
-        stderr: result.stderr,
+        stdout: serialize_eval_stream(result.stdout),
+        stderr: serialize_eval_stream(result.stderr),
         exception: result.exception && serialize_eval_exception(result.exception),
         request_id: request_id
       }
@@ -246,6 +246,10 @@ module Canary
 
     def serialize_eval_value(value)
       { class: value.class_name, inspect: value.inspect_text, truncated: value.truncated }
+    end
+
+    def serialize_eval_stream(stream)
+      { text: stream.text, truncated: stream.truncated }
     end
 
     def serialize_eval_exception(exception)

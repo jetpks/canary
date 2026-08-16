@@ -36,8 +36,10 @@ class ServerEvalTest < Minitest::Test
     assert_equal "Integer", body.dig("value", "class")
     assert_equal "42", body.dig("value", "inspect")
     refute body.dig("value", "truncated")
-    assert_match(/hello_eval_gate/, body["stdout"])
-    assert_equal "", body["stderr"]
+    assert_match(/hello_eval_gate/, body.dig("stdout", "text"))
+    refute body.dig("stdout", "truncated")
+    assert_equal "", body.dig("stderr", "text")
+    refute body.dig("stderr", "truncated")
     assert_nil body["exception"]
     assert_equal "req-1", body["request_id"]
   end
@@ -56,7 +58,8 @@ class ServerEvalTest < Minitest::Test
 
     assert_equal "timeout", body["outcome"]
     assert_nil body["value"]
-    assert_equal "", body["stdout"]
+    assert_equal "", body.dig("stdout", "text")
+    refute body.dig("stdout", "truncated")
   end
 
   def test_a_huge_inspect_is_truncated_on_the_wire

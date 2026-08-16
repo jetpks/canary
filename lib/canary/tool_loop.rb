@@ -28,7 +28,7 @@ module Canary
         type: "function",
         function: {
           name: "ruby_eval",
-          description: "Evaluate a string of Ruby code and return the result: outcome, value (class, inspect, truncated), stdout, stderr, exception. No grading - just runs the code and reports what happened.",
+          description: "Evaluate a string of Ruby code and return the result: outcome, value (class, inspect, truncated), stdout (text, truncated), stderr (text, truncated), exception. No grading - just runs the code and reports what happened.",
           parameters: {
             type: "object",
             properties: {
