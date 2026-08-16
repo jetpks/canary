@@ -66,6 +66,19 @@ module Canary
     # timeout that fires early is a worse bug than one that waits too long.
     DEFAULT_TIMEOUT = 5 # seconds
 
+    # Bounds on what #eval_code reports back about an evaluated value: the value
+    # itself never crosses the relay (only this much of its +inspect+ does),
+    # so a submission that evaluates to something with a huge or infinite
+    # inspect (a giant String, a self-referential structure) can't blow up
+    # the wire. Generous relative to anything a normal eval result needs to
+    # show a caller; a floor, not a target.
+    EVAL_VALUE_INSPECT_LIMIT = 8 * 1024 # bytes
+
+    # Same reasoning as EVAL_VALUE_INSPECT_LIMIT, for captured stdout/stderr:
+    # bounded so a submission that floods output can't grow the wire
+    # payload without limit.
+    EVAL_OUTPUT_LIMIT = 64 * 1024 # bytes
+
     # Preloads every requested adapter's framework in the parent process.
     def initialize(adapters: ADAPTERS.keys)
       adapters.each do |name|
@@ -83,7 +96,7 @@ module Canary
     # than propagated as an exception.
     def rollout(adapter:, submission_path:, coverage: true, timeout: DEFAULT_TIMEOUT)
       klass = adapter_class(adapter)
-      fork_and_collect(klass, timeout) { run_in_child(klass, submission_path, coverage) }
+      fork_and_collect(timeout, build_failure: rollout_failure_builder(klass)) { run_in_child(klass, submission_path, coverage) }
     end
 
     # Forks a child to run +task+ (a solution file graded by a separate test
@@ -97,16 +110,30 @@ module Canary
       klass = adapter_class(task.adapter)
       grader_digest = digest_file(task.test_path)
 
-      result = fork_and_collect(klass, timeout) { run_task_in_child(klass, task, coverage) }
+      result = fork_and_collect(timeout, build_failure: rollout_failure_builder(klass)) { run_task_in_child(klass, task, coverage) }
 
       return result if grader_unchanged?(task.test_path, grader_digest)
 
       tampered_result(klass)
     end
 
+    # Forks a child to run +code+ - a bare string of Ruby, no adapter, no
+    # grading, no prefilter - and returns a Canary::EvalResult. Stateless
+    # and one-shot: every call is a fresh fork, same as #rollout, with no
+    # session and nothing carried between calls.
+    #
+    # Same failure taxonomy as #rollout (never raises into the caller: a
+    # crash, a signal, or a timeout comes back as EvalResult#outcome), plus
+    # its own success-side split - :ok when +code+ evaluates cleanly,
+    # :raised when it raises a StandardError - since there is no pass/fail
+    # verdict here to fold that into.
+    def eval_code(code:, timeout: DEFAULT_TIMEOUT)
+      fork_and_collect(timeout, build_failure: eval_failure_builder) { run_eval_in_child(code) }
+    end
+
     private
 
-    def fork_and_collect(klass, timeout, &block)
+    def fork_and_collect(timeout, build_failure:, &block)
       reader, writer = IO.pipe
 
       pid = fork do
@@ -130,7 +157,7 @@ module Canary
           task.with_timeout(timeout) { reader.read }
         end
       rescue Async::TimeoutError
-        return timeout_result(klass, pid, reader, timeout)
+        return timeout_result(pid, reader, timeout, build_failure)
       ensure
         Thread.current[:canary_pool_suppress_io_buffer_warning] = false
       end
@@ -138,7 +165,7 @@ module Canary
       reader.close
       _pid, status = Process.wait2(pid)
 
-      data.empty? ? crash_result(klass, status) : marshalled_result(data, klass, status)
+      data.empty? ? crash_result(status, build_failure) : marshalled_result(data, status, build_failure)
     end
 
     # Runs inside the process #fork_and_collect just forked (the "relay").
@@ -175,7 +202,7 @@ module Canary
       exit!(worker_status.exitstatus || 1)
     end
 
-    def marshalled_result(data, klass, status)
+    def marshalled_result(data, status, build_failure)
       io = StringIO.new(data)
 
       begin
@@ -191,7 +218,7 @@ module Canary
         # scoped to just this call: a bug anywhere else in this method
         # should surface as the diagnostic branch below, not get mistaken
         # for a truncated wire.
-        return crash_result(klass, status)
+        return crash_result(status, build_failure)
       end
 
       # The worker still has to hold *some* open pipe to the relay for the
@@ -203,7 +230,7 @@ module Canary
       # once, ever, so any wire with bytes left after the first object
       # carries more than the trusted final write and is not trustworthy at
       # all - not the first object on it, not the last.
-      return wire_tampered_result(klass) unless io.eof?
+      return build_failure.call(outcome: :crash, error: "reporting pipe carried more than one object; discarding an untrustworthy result") unless io.eof?
 
       result
     rescue StandardError, SystemStackError => e
@@ -216,35 +243,14 @@ module Canary
       # array wire raises SystemStackError, which isn't - hence naming it
       # explicitly rather than trusting a bare `rescue` to catch everything
       # Marshal.load can throw at us.
-      malformed_wire_result(klass, e)
-    end
-
-    def wire_tampered_result(klass)
-      RolloutResult.new(
-        adapter: klass::NAME,
-        examples: [],
-        passed: 0,
-        failed: 0,
-        total: 0,
-        outcome: :crash,
-        error: "reporting pipe carried more than one object; discarding an untrustworthy result"
-      )
-    end
-
-    def malformed_wire_result(klass, error)
-      RolloutResult.new(
-        adapter: klass::NAME,
-        examples: [],
-        passed: 0,
-        failed: 0,
-        total: 0,
+      build_failure.call(
         outcome: :crash,
         error: "reporting pipe carried data Marshal.load could not parse " \
-               "(#{error.class}: #{error.message}); discarding an untrustworthy result"
+               "(#{e.class}: #{e.message}); discarding an untrustworthy result"
       )
     end
 
-    def timeout_result(klass, pid, reader, timeout)
+    def timeout_result(pid, reader, timeout, build_failure)
       begin
         # A leading "-" targets the whole process group (by construction,
         # this pid's own group), not just its leader. Never look the group
@@ -259,15 +265,7 @@ module Canary
       Process.wait2(pid)
       reader.close
 
-      RolloutResult.new(
-        adapter: klass::NAME,
-        examples: [],
-        passed: 0,
-        failed: 0,
-        total: 0,
-        outcome: :timeout,
-        error: "rollout exceeded #{timeout}s timeout"
-      )
+      build_failure.call(outcome: :timeout, error: "exceeded #{timeout}s timeout")
     end
 
     def tampered_result(klass)
@@ -297,22 +295,29 @@ module Canary
       false
     end
 
-    def crash_result(klass, status)
+    def crash_result(status, build_failure)
       detail = if status.signaled?
                  "terminated by signal #{status.termsig} (#{Signal.signame(status.termsig)})"
                else
                  "exited with status #{status.exitstatus} without reporting a result"
                end
 
-      RolloutResult.new(
-        adapter: klass::NAME,
-        examples: [],
-        passed: 0,
-        failed: 0,
-        total: 0,
-        outcome: :crash,
-        error: detail
-      )
+      build_failure.call(outcome: :crash, error: detail)
+    end
+
+    # #fork_and_collect never constructs a RolloutResult/EvalResult itself -
+    # every failure path (crash, timeout, a tampered or malformed wire) goes
+    # through this caller-supplied factory instead, so the relay/timeout
+    # machinery stays the one shared implementation for both #rollout and
+    # #eval_code rather than forking into two.
+    def rollout_failure_builder(klass)
+      lambda do |outcome:, error:|
+        RolloutResult.new(adapter: klass::NAME, examples: [], passed: 0, failed: 0, total: 0, outcome: outcome, error: error)
+      end
+    end
+
+    def eval_failure_builder
+      ->(outcome:, error:) { EvalResult.new(outcome: outcome, error: error) }
     end
 
     def run_in_child(adapter_class, submission_path, coverage)
@@ -354,6 +359,60 @@ module Canary
         outcome: :error,
         error: "#{e.class}: #{e.message}"
       )
+    end
+
+    # Runs inside the worker fork (see #relay). Evaluates +code+ with an
+    # explicit filename/lineno so a raised exception's backtrace reads a
+    # bare "(eval)" rather than this file's own real path - verified live:
+    # a bare `eval(code)` instead produces "(eval at .../pool.rb:NNN)",
+    # which would leak the host path with nothing to sanitize it against
+    # (there is no tempfile in this path, unlike Server#sanitize_text's).
+    #
+    # $stdout/$stderr are swapped for the life of the call rather than
+    # captured some other way: this worker's only job, ever, is this one
+    # eval before it exit!s, so nothing else in the process depends on
+    # either being the real IO.
+    def run_eval_in_child(code)
+      stdout = StringIO.new
+      stderr = StringIO.new
+      $stdout = stdout
+      $stderr = stderr
+
+      value = eval(code, TOPLEVEL_BINDING, "(eval)", 1)
+
+      EvalResult.new(value: represent_eval_value(value), stdout: bounded_eval_output(stdout.string), stderr: bounded_eval_output(stderr.string))
+    rescue StandardError => e
+      EvalResult.new(
+        outcome: :raised,
+        exception: EvalResult::Raised.new(class_name: e.class.name, message: e.message.to_s),
+        stdout: bounded_eval_output(stdout.string),
+        stderr: bounded_eval_output(stderr.string)
+      )
+    end
+
+    # The evaluated value itself never crosses the relay - only its class
+    # name and a length-capped +inspect+ do. A submission-defined #inspect
+    # can itself raise; that's reported as a fixed, already-truncated
+    # placeholder rather than letting it escape and get mistaken for the
+    # evaluated code's own :raised outcome.
+    def represent_eval_value(value)
+      text, truncated = bounded_inspect(value)
+      EvalResult::Value.new(class_name: value.class.name, inspect_text: text, truncated: truncated)
+    end
+
+    def bounded_inspect(value)
+      text = value.inspect
+      truncated = text.bytesize > EVAL_VALUE_INSPECT_LIMIT
+      text = text.byteslice(0, EVAL_VALUE_INSPECT_LIMIT).scrub if truncated
+      [text, truncated]
+    rescue StandardError
+      ["#<#{value.class}: inspect raised>", true]
+    end
+
+    def bounded_eval_output(text)
+      return text unless text.bytesize > EVAL_OUTPUT_LIMIT
+
+      text.byteslice(0, EVAL_OUTPUT_LIMIT).scrub
     end
 
     # A submission that calls the bare Coverage.result itself stops

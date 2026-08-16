@@ -19,15 +19,15 @@ the tutorial if you're new here.
   `CANARY_LIVE` opt-in gate, and the offline test that proves its shape
   without spending anything.
 - [Run the server](how-to/run-the-server.md) — boot `bin/canary-server` and
-  call `POST /v1/rollouts` over a real loopback socket.
+  call `POST /v1/rollouts` or `POST /v1/eval` over a real loopback socket.
 
 ## Reference
 
 - [`meta.yml` keys](reference/meta-yml.md)
 - [Sweep record schema](reference/sweep-record-schema.md) — every
   `Canary::Eval::Record` field, including the non-score reasons.
-- [Wire protocol](reference/wire-protocol.md) — the `POST /v1/rollouts`
-  request/response shape.
+- [Wire protocol](reference/wire-protocol.md) — the `POST /v1/rollouts` and
+  `POST /v1/eval` request/response shapes.
 - [Public API map](reference/public-api.md) — every class `require "canary"`
   loads, one line each.
 

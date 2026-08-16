@@ -7,8 +7,9 @@ a link to its own file for the real doc comment.
 |---|---|---|
 | `Canary::VERSION` | `lib/canary/version.rb` | gem version string. |
 | `Canary::RolloutResult`, `Canary::ExampleResult` | `lib/canary/rollout_result.rb` | the structured outcome of one rollout, and one graded example within it. |
+| `Canary::EvalResult`, `Canary::EvalResult::Value`, `Canary::EvalResult::Raised` | `lib/canary/eval_result.rb` | the structured outcome of one `Pool#eval_code` call, and the bounded stand-ins it carries for the evaluated value and any raised exception. |
 | `Canary::Adapters::MinitestAdapter`, `Canary::Adapters::RSpecAdapter` | `lib/canary/adapters/` | framework-specific runners `Canary::Pool` dispatches to. |
-| `Canary::Pool` | `lib/canary/pool.rb` | forks a child per rollout; the process-isolation boundary. |
+| `Canary::Pool` | `lib/canary/pool.rb` | forks a child per rollout or `eval_code` call; the process-isolation boundary. |
 | `Canary::Prompt` | `lib/canary/prompt.rb` | renders a `TaskRepo::Entry` into model-facing prompt text (hidden or grader-visible). |
 | `Canary::Extractor` | `lib/canary/extractor.rb` | pulls Ruby out of a model's fenced-markdown answer. |
 | `Canary::Task` | `lib/canary/task.rb` | `{solution_path, test_path, adapter}` — what `Pool#rollout_task` runs. |
@@ -22,7 +23,7 @@ a link to its own file for the real doc comment.
 | `Canary::Eval::Record` | `lib/canary/eval/record.rb` | one row per (task, model, sample) — see [`sweep-record-schema.md`](sweep-record-schema.md). |
 | `Canary::Eval::Report` | `lib/canary/eval/report.rb` | aggregates a set of `Record`s into `pass@k` and non-score breakdowns. |
 | `Canary::Eval::Runner` | `lib/canary/eval/runner.rb` | render → sample → extract → verify, fanned out under a bounded `Async::Semaphore`. |
-| `Canary::Server`, `Canary::Server::Auth`, `Canary::Server::Config` | `lib/canary/server.rb`, `lib/canary/server/` | the `POST /v1/rollouts` wire surface — see [`wire-protocol.md`](wire-protocol.md). |
+| `Canary::Server`, `Canary::Server::Auth`, `Canary::Server::Config` | `lib/canary/server.rb`, `lib/canary/server/` | the `POST /v1/rollouts` and `POST /v1/eval` wire surface — see [`wire-protocol.md`](wire-protocol.md). |
 
 Two more live under `bin/`, not `lib/`, and are not part of `require
 "canary"`: `bin/canary-server` (boots `Canary::Server` on a real socket) and

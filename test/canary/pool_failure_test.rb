@@ -93,20 +93,26 @@ class PoolFailureTest < Minitest::Test
   def test_an_argument_error_outside_marshal_load_is_reported_as_malformed_not_a_crash
     # This is the one failure mode #marshalled_result can't be driven into by
     # any real wire byte, since it's a defense against a *future* bug in the
-    # method's own body, not a currently-triggerable one - so it's reached
-    # directly, via `send`, rather than through the public #rollout. Only
-    # #wire_tampered_result is stubbed, to simulate that hypothetical bug;
-    # Marshal.load and #io.eof? - the behavior actually under test - run for
-    # real, on a real two-object wire.
+    # build_failure callable itself, not a currently-triggerable one - so
+    # it's reached directly, via `send`, rather than through the public
+    # #rollout. The stub only raises on its first call (the wire-tampered
+    # path, for the extra-object case below); its second call (the rescue
+    # path this drives into) behaves like the real builder. Marshal.load and
+    # #io.eof? - the behavior actually under test - run for real, on a real
+    # two-object wire.
     pid = fork { exit!(0) }
     _pid, status = Process.wait2(pid)
     two_objects_on_the_wire = Marshal.dump(:first) + Marshal.dump(:second)
 
-    @pool.define_singleton_method(:wire_tampered_result) do |_klass|
-      raise ArgumentError, "injected: a bug elsewhere in marshalled_result, not Marshal.load"
+    calls = 0
+    build_failure = lambda do |outcome:, error:|
+      calls += 1
+      raise ArgumentError, "injected: a bug elsewhere in marshalled_result, not Marshal.load" if calls == 1
+
+      Canary::RolloutResult.new(adapter: :minitest, examples: [], passed: 0, failed: 0, total: 0, outcome: outcome, error: error)
     end
 
-    result = @pool.send(:marshalled_result, two_objects_on_the_wire, Canary::Adapters::MinitestAdapter, status)
+    result = @pool.send(:marshalled_result, two_objects_on_the_wire, status, build_failure)
 
     assert_match(/ArgumentError/, result.error)
     refute_match(/exited with status|terminated by signal/, result.error)
@@ -121,6 +127,24 @@ class PoolFailureTest < Minitest::Test
     assert result.ok?
     refute result.crash?
     refute result.timeout?
+  end
+
+  def test_a_non_terminating_eval_times_out_without_hanging_the_parent
+    started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+
+    result = @pool.eval_code(code: "sleep 30", timeout: 1)
+
+    elapsed = Process.clock_gettime(Process::CLOCK_MONOTONIC) - started_at
+
+    assert result.timeout?
+    assert_operator elapsed, :<, 5, "expected the pool's own timeout to bound the eval"
+  end
+
+  def test_an_eval_that_exits_is_reported_as_a_crash
+    result = @pool.eval_code(code: "exit!")
+
+    assert result.crash?
+    assert_match(/exited with status/, result.error)
   end
 
   def test_requiring_canary_does_not_mutate_warning_experimental_for_the_host
