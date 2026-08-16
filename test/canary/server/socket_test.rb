@@ -63,6 +63,48 @@ class Canary::Server::SocketTest < Minitest::Test
     end
   end
 
+  def test_a_real_eval_round_trip_over_a_bound_loopback_socket
+    entries = Canary::TaskRepo.all(root: FIXTURES_ROOT)
+    app = Canary::Server::Auth.new(Canary::Server.new(entries: entries), token: TOKEN)
+
+    endpoint = Async::HTTP::Endpoint.parse("http://127.0.0.1:0")
+    bound = endpoint.bound
+
+    begin
+      server = Async::HTTP::Server.new(app, bound, protocol: endpoint.protocol, scheme: endpoint.scheme)
+
+      Sync do |task|
+        task.with_timeout(10) do
+          server_task = server.run
+          port = bound.sockets.first.local_address.ip_port
+          client = Async::HTTP::Client.new(Async::HTTP::Endpoint.parse("http://127.0.0.1:#{port}"))
+
+          begin
+            response = client.post(
+              "/v1/eval",
+              { "authorization" => "Bearer #{TOKEN}", "content-type" => "application/json" },
+              [JSON.generate(code: "puts :hi; 6 * 7", request_id: "sock-eval-1")]
+            )
+
+            assert_equal 200, response.status
+            body = JSON.parse(response.read)
+            assert_equal "ok", body["outcome"]
+            assert_equal "Integer", body.dig("value", "class")
+            assert_equal "42", body.dig("value", "inspect")
+            assert_match(/hi/, body["stdout"])
+            assert_equal "sock-eval-1", body["request_id"]
+          ensure
+            response&.close
+            client.close
+            server_task.stop
+          end
+        end
+      end
+    ensure
+      bound.close
+    end
+  end
+
   def test_a_real_request_without_the_bearer_token_is_401_over_the_socket
     entries = Canary::TaskRepo.all(root: FIXTURES_ROOT)
     app = Canary::Server::Auth.new(Canary::Server.new(entries: entries), token: TOKEN)

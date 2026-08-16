@@ -200,6 +200,14 @@ class ServerTest < Minitest::Test
     refute_includes location, "/"
   end
 
+  def test_an_unknown_path_is_404_and_never_reaches_the_verifier
+    request = ::Protocol::HTTP::Request["POST", "/v1/nope", { "content-type" => "application/json" }, JSON.generate({})]
+    response = @server.call(request)
+
+    assert_equal 404, response.status
+    assert_empty @spy.calls
+  end
+
   def test_a_malformed_json_body_is_400_and_never_reaches_the_verifier
     request = build_request(%({"not valid json))
     response = @server.call(request)
