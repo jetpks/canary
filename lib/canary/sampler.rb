@@ -115,7 +115,7 @@ module Canary
       end
 
       @budget.spend!
-      result = @provider.sample(model: model, prompt: rendered.text)
+      result = @provider.sample(model: model, prompt: rendered.text, sample_index: index)
       record_spend!(model, result)
 
       @record_sink.record(

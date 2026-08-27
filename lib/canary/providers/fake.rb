@@ -18,8 +18,8 @@ module Canary
         @responder = responder || ->(model:, prompt:) { Success(Sample.new(text: "fake response", raw: {model: model, prompt: prompt}, stop_reason: :end_turn)) }
       end
 
-      def sample(model:, prompt:)
-        @calls << {model: model, prompt: prompt}
+      def sample(model:, prompt:, sample_index: nil)
+        @calls << {model: model, prompt: prompt, sample_index: sample_index}
         @responder.call(model: model, prompt: prompt)
       end
     end

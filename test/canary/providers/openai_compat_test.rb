@@ -162,6 +162,64 @@ class OpenAICompatTest < Minitest::Test
     assert_equal [{role: "user", content: "hello there"}], sent[:messages]
   end
 
+  # The bug this guards: with no temperature in the body, a backend that
+  # decodes greedily by default (mlx-vlm) returns byte-identical text for
+  # every sample, turning a k=3 sweep into a k=1 sweep billed three times.
+  # Stating temperature is what fixes it; the seed only makes the variation
+  # reproducible.
+  def test_sampling_is_stated_on_the_request_rather_than_left_to_the_server
+    calls = []
+    transport = ->(uri:, headers:, body:) {
+      calls << body
+      fake_response(200, response_for(finish_reason: "stop", content: "hi"))
+    }
+    provider = Canary::Providers::OpenAICompat.new(base_url: BASE_URL, api_key: "k", transport: transport)
+
+    provider.sample(model: "m", prompt: "p")
+
+    sent = JSON.parse(calls.first, symbolize_names: true)
+    assert_equal Canary::Providers::OpenAICompat::DEFAULT_TEMPERATURE, sent[:temperature]
+    assert_operator sent[:temperature], :>, 0, "a zero temperature decodes greedily and collapses k>1 to k=1"
+  end
+
+  def test_seed_follows_the_sample_index_so_the_k_samples_of_a_task_differ
+    calls = []
+    transport = ->(uri:, headers:, body:) {
+      calls << body
+      fake_response(200, response_for(finish_reason: "stop", content: "hi"))
+    }
+    provider = Canary::Providers::OpenAICompat.new(base_url: BASE_URL, api_key: "k", transport: transport)
+
+    3.times { |index| provider.sample(model: "m", prompt: "p", sample_index: index) }
+
+    seeds = calls.map { |body| JSON.parse(body, symbolize_names: true)[:seed] }
+
+    assert_equal [0, 1, 2], seeds
+    assert_equal seeds.uniq.size, seeds.size, "a repeated seed asks for the same completion twice"
+  end
+
+  def test_temperature_is_overridable_per_instance_and_per_model
+    calls = []
+    transport = ->(uri:, headers:, body:) {
+      calls << body
+      fake_response(200, response_for(finish_reason: "stop", content: "hi"))
+    }
+    provider = Canary::Providers::OpenAICompat.new(
+      base_url: BASE_URL, api_key: "k", transport: transport, temperature: 0.2,
+      extra_body_by_model: {"card-model" => {temperature: 0.7, top_p: 0.95}}
+    )
+
+    provider.sample(model: "plain-model", prompt: "p")
+    provider.sample(model: "card-model", prompt: "p")
+
+    assert_in_delta 0.2, JSON.parse(calls.first, symbolize_names: true)[:temperature]
+
+    carded = JSON.parse(calls.last, symbolize_names: true)
+
+    assert_in_delta 0.7, carded[:temperature]
+    assert_in_delta 0.95, carded[:top_p]
+  end
+
   def test_extra_body_by_model_is_merged_into_the_request_for_a_matching_model
     calls = []
     transport = ->(uri:, headers:, body:) {

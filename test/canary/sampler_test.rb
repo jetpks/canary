@@ -264,6 +264,29 @@ class SamplerTest < Minitest::Test
     assert_empty fake.calls
   end
 
+  # The sampler already knows each completion's index - it records it - so
+  # the provider must receive it too, or every sample of a task asks for the
+  # same seed and k>1 buys one answer k times.
+  def test_each_sample_reaches_the_provider_with_its_own_index
+    fake = Canary::Providers::Fake.new
+    sampler = build_sampler(provider: fake, max_samples: 5)
+
+    sampler.call(@entry, model: "claude-fixture-model", n: 3)
+
+    assert_equal [0, 1, 2], fake.calls.map { |call| call[:sample_index] }
+  end
+
+  # base_index keeps indices contiguous across several n: 1 calls, so the
+  # seeds have to follow it too rather than restarting at 0 each time.
+  def test_base_index_carries_into_the_provider_sample_index
+    fake = Canary::Providers::Fake.new
+    sampler = build_sampler(provider: fake, max_samples: 5)
+
+    sampler.call(@entry, model: "claude-fixture-model", n: 2, base_index: 7)
+
+    assert_equal [7, 8], fake.calls.map { |call| call[:sample_index] }
+  end
+
   private
 
   def client_returning(message)

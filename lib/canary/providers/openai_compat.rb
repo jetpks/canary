@@ -29,6 +29,26 @@ module Canary
       OPEN_TIMEOUT = 10
       DEFAULT_READ_TIMEOUT = 60
 
+      # Sampling is stated on every request rather than left to the server,
+      # because "the server default" is not one behaviour. OpenRouter and
+      # Anthropic sample at 1.0; mlx-vlm's server decodes greedily
+      # (generate/common.py DEFAULT_TEMPERATURE = 0.0), and it reaches that
+      # fallback even for a model whose own generation_config.json asks for
+      # 1.0, because it reads sampling defaults off config.json instead.
+      #
+      # Sending nothing therefore made every k>1 sweep against the studio
+      # arm a k=1 sweep billed three times: measured 2026-08-27, the
+      # committed run-20260815T215441Z has byte-identical completions across
+      # all three samples for 44/44 tasks, as did the Flash-Next run that
+      # surfaced this. A seed alone would not have helped - greedy decoding
+      # has nothing to seed.
+      #
+      # 1.0 specifically because it is what the hosted arms were already
+      # doing implicitly: stating it changes no hosted result and fixes the
+      # local ones, which is the only choice here that does not silently
+      # re-baseline evidence that is already committed.
+      DEFAULT_TEMPERATURE = 1.0
+
       # A per-instance read timeout, not a fixed constant: most callers are
       # fine with DEFAULT_READ_TIMEOUT's 60s, but a backend that has to load
       # a model into memory before it can answer at all needs an order of
@@ -53,16 +73,29 @@ module Canary
       # reasoning-heavy model needs a different setting than one that
       # doesn't reason at all. Absent from the hash for a given model is a
       # no-op merge, not an error - most models need nothing extra.
-      def initialize(base_url:, api_key:, max_tokens: DEFAULT_MAX_TOKENS, read_timeout: DEFAULT_READ_TIMEOUT, transport: nil, extra_body_by_model: {})
+      def initialize(base_url:, api_key:, max_tokens: DEFAULT_MAX_TOKENS, read_timeout: DEFAULT_READ_TIMEOUT, transport: nil, extra_body_by_model: {}, temperature: DEFAULT_TEMPERATURE)
         @uri = URI("#{base_url}/chat/completions")
         @api_key = api_key
         @max_tokens = max_tokens
         @transport = transport || OpenAICompat.default_transport(read_timeout)
         @extra_body_by_model = extra_body_by_model
+        @temperature = temperature
       end
 
-      def sample(model:, prompt:, max_tokens: @max_tokens)
-        body_hash = {model: model, max_tokens: max_tokens, messages: [{role: "user", content: prompt}]}.merge(@extra_body_by_model.fetch(model, {}))
+      # +sample_index+ becomes the request's seed, so the k samples of one
+      # task differ from each other while a re-run of the same sweep asks
+      # for the same set again - varying and reproducible, rather than
+      # trading one for the other. A backend that ignores seed still samples
+      # correctly, since temperature is what does the work.
+      #
+      # extra_body_by_model merges last and so overrides both: a model whose
+      # card asks for its own sampling (Flash-Next wants top_k 20 / top_p
+      # 0.95) states that per-model rather than by moving this default.
+      def sample(model:, prompt:, max_tokens: @max_tokens, sample_index: 0)
+        body_hash = {
+          model: model, max_tokens: max_tokens, temperature: @temperature, seed: sample_index,
+          messages: [{role: "user", content: prompt}]
+        }.merge(@extra_body_by_model.fetch(model, {}))
         body = JSON.generate(body_hash)
         headers = {"Authorization" => "Bearer #{@api_key}", "Content-Type" => "application/json"}
         response = @transport.call(uri: @uri, headers: headers, body: body)

@@ -30,7 +30,12 @@ module Canary
         @max_tokens = max_tokens
       end
 
-      def sample(model:, prompt:, max_tokens: @max_tokens)
+      # +sample_index+ is accepted for interface parity with
+      # Providers::OpenAICompat and deliberately unused: the Messages API
+      # has no seed parameter, and it already samples at temperature 1.0 by
+      # default, so this arm never had the greedy-decode problem that made
+      # the OpenAI-compatible one send temperature explicitly.
+      def sample(model:, prompt:, max_tokens: @max_tokens, sample_index: nil) # rubocop:disable Lint/UnusedMethodArgument
         response = @client.messages.create(
           model: model,
           max_tokens: max_tokens,

@@ -1,0 +1,28 @@
+{
+  "harness": "unbounded_pilot.rb (throwaway probe, not committed code)",
+  "question": "does reasoning ever terminate on its own, and at what length",
+  "alias": "qwen3.8-27b-mxfp8-concurrent4",
+  "concurrency": 4,
+  "k": 1,
+  "max_tokens": 32768,
+  "thinking_budget": 32768,
+  "thinking_budget_note": "equal to max_tokens, so the budget can never fire before the hard ceiling",
+  "read_timeout": 5400,
+  "gateway_buffered_timeout": 5400,
+  "task_selection": "even stride over the alphabetical corpus, not by prior outcome",
+  "master_seed": 218951541,
+  "seeds": {
+    "attribute_bag_hash_equality#0": 161263089,
+    "cache_sweep_packed_entries#0": 1695174031,
+    "coordinate_destructure_splat#0": 865620880,
+    "delivery_audited_route_block#0": 672887557,
+    "enumerable_sparse_array#0": 405500862,
+    "event_broadcaster_duck_protocol#0": 2070174671,
+    "hash_default_proc_tally#0": 349229706,
+    "ledger_freeze_dup_clone#0": 297313621,
+    "peekable_token_stream#0": 1680464150,
+    "shadowed_constant_circle#0": 1836699730,
+    "stock_count_float_difference#0": 1176241249,
+    "temperature_report_injected_scale#0": 2033596511
+  }
+}
