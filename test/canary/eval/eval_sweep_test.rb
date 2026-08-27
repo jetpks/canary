@@ -149,6 +149,8 @@ class EvalSweepTest < Minitest::Test
     qwen3.8-27b-mxfp8-concurrent4
     qwen3.8-27b-mxfp8-concurrent1
     qwen3.8-flash-next-oq3
+    qwen3.6-35b-a3b-4bit
+    qwen3.6-35b-a3b-8bit
   ].freeze
 
   def test_only_the_thinking_bounded_studio_arms_carry_a_thinking_effort_entry
@@ -159,6 +161,12 @@ class EvalSweepTest < Minitest::Test
     assert_equal({}, EvalSweep::THINKING_EFFORT.fetch("qwen3.8-27b-mxfp8-concurrent4"))
     assert_equal({reasoning_effort: "none"}, EvalSweep::THINKING_EFFORT.fetch("qwen3.8-27b-mxfp8-concurrent1"))
     assert_equal({reasoning_effort: "none"}, EvalSweep::THINKING_EFFORT.fetch("qwen3.8-flash-next-oq3"))
+
+    # The mlx engine takes neither reasoning_effort nor a thinking budget;
+    # chat_template_kwargs is its only lever.
+    %w[qwen3.6-35b-a3b-4bit qwen3.6-35b-a3b-8bit].each do |arm|
+      assert_equal({chat_template_kwargs: {enable_thinking: false}}, EvalSweep::THINKING_EFFORT.fetch(arm))
+    end
   end
 
   # AC6: studio models get no PROVIDER_PINS entry - one backend exists by
@@ -183,6 +191,7 @@ class EvalSweepTest < Minitest::Test
     assert_equal({}, EvalSweep.extra_body_for("qwen3.8-27b-mxfp8-concurrent4"))
     assert_equal({reasoning_effort: "none"}, EvalSweep.extra_body_for("qwen3.8-27b-mxfp8-concurrent1"))
     assert_equal({reasoning_effort: "none"}, EvalSweep.extra_body_for("qwen3.8-flash-next-oq3"))
+    assert_equal({chat_template_kwargs: {enable_thinking: false}}, EvalSweep.extra_body_for("qwen3.6-35b-a3b-4bit"))
   end
 
   # AC3: load_env! must not demand any credential for a studio-only model

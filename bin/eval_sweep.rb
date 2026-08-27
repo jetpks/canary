@@ -307,7 +307,26 @@ module EvalSweep
     # A thinking-enabled arm is a separate, deliberately unbought measurement:
     # at ~27 tok/s decode a 16_384-token reasoning budget is ~10 minutes per
     # call, i.e. ~22 hours for one k=3 sweep.
-    "qwen3.8-flash-next-oq3" => {reasoning_effort: "none"}
+    "qwen3.8-flash-next-oq3" => {reasoning_effort: "none"},
+    #
+    # The two qwen3.6-35b-a3b arms are reasoning models on the mlx engine,
+    # and mlx_lm.server takes neither reasoning_effort nor a thinking budget
+    # - its lever is chat_template_kwargs, forwarded to the tokenizer's
+    # apply_chat_template (server.py:1192).
+    #
+    # They ran unbounded until now only because nothing was sampling them:
+    # under the old greedy default they terminated on their own, and at
+    # temperature 1.0 they do not. Measured 2026-08-27 on -4bit, same prompt:
+    # 823 tokens in 321.7s with thinking left on, against 21 tokens in 0.32s
+    # with it off, and a task-major sweep hit stop_reason "length" at the
+    # full 16_384-token cap on two of its first three samples - unscored,
+    # 5.5 minutes each.
+    #
+    # Off rather than merely bounded, matching concurrent1 and
+    # flash-next-oq3: all four arms then answer a hidden-grader task without
+    # reasoning, which is the like-for-like comparison this sweep is for.
+    "qwen3.6-35b-a3b-4bit" => {chat_template_kwargs: {enable_thinking: false}},
+    "qwen3.6-35b-a3b-8bit" => {chat_template_kwargs: {enable_thinking: false}}
   }.freeze
 
   # I26 (I25 F4): eval_sweep.rb never pinned OpenRouter routing, so every
