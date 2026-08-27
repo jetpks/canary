@@ -28,6 +28,37 @@ module Canary
         @records.reject(&:scored?).group_by(&:non_score_reason).transform_values(&:size)
       end
 
+      # Timing is reported over ALL records, not just scored ones: a sample
+      # that burned four minutes and then failed to extract still cost four
+      # minutes, and a comparison that hid it would flatter whichever model
+      # fails slowly. Nil-safe because version-1 records on disk predate
+      # sample_ms entirely.
+      def timed_records
+        @records.reject { |record| record.sample_ms.nil? }
+      end
+
+      def total_sample_ms
+        timed_records.sum(&:sample_ms)
+      end
+
+      def median_sample_ms
+        values = timed_records.map(&:sample_ms).sort
+        return nil if values.empty?
+
+        middle = values.size / 2
+        values.size.odd? ? values[middle] : ((values[middle - 1] + values[middle]) / 2.0).round
+      end
+
+      # Seconds of wall clock per task solved at least once - the blunt
+      # time-vs-accuracy number. Nil when nothing passed, rather than
+      # dividing by zero to report an infinitely expensive model.
+      def seconds_per_task_passed
+        solved = grouped_by_task.count { |_task, records| records.any?(&:passed) }
+        return nil if solved.zero? || timed_records.empty?
+
+        (total_sample_ms / 1000.0 / solved).round(1)
+      end
+
       def pass_at_1
         pass_at_k(1)
       end

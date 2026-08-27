@@ -645,6 +645,11 @@ module EvalSweep
     lines << "- scored: #{report.scored_count}, non_score: #{report.non_score_count}"
     lines << "- non_scores_by_reason: #{report.non_scores_by_reason}"
     lines << "- pass_at_1: #{report.pass_at_1.inspect} (tasks_counted: #{report.tasks_counted(1)})"
+    if report.median_sample_ms
+      lines << "- wall_clock: total #{(report.total_sample_ms / 1000.0).round(1)}s, " \
+               "median/sample #{(report.median_sample_ms / 1000.0).round(1)}s, " \
+               "per_task_passed #{report.seconds_per_task_passed.inspect}s"
+    end
     lines << "- pass_at_#{k}: #{report.pass_at_k(k).inspect} (tasks_counted: #{report.tasks_counted(k)})" if k && k > 1
     lines << ""
     lines.concat(task_table(provenance_records))

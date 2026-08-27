@@ -32,7 +32,7 @@ class RunnerTest < Minitest::Test
     assert_equal 2, records.size
     assert_equal [0, 1], records.map(&:sample_index).sort
     records.each do |record|
-      assert_equal 1, record.schema_version
+      assert_equal 2, record.schema_version
       assert_equal "eval_fixture_task", record.task_name
       assert_equal "fixture-model", record.model
       assert_equal :hidden, record.render_mode
@@ -256,6 +256,36 @@ class RunnerTest < Minitest::Test
     assert_nil record.non_score_reason
     assert record.passed
     assert_equal :refusal, record.stop_reason
+  end
+
+  # A time-vs-accuracy comparison needs a per-sample duration, and it has to
+  # be on every record: a refusal that took four minutes and one that took
+  # four seconds are different findings, and only one of them is the model
+  # being fast.
+  def test_every_record_carries_the_wall_time_of_its_attempt
+    sampler = build_sampler(success_fake(VALID_CODE_RESPONSE))
+    runner = Canary::Eval::Runner.new(sampler: sampler)
+
+    records = runner.call(entries: [build_entry], models: ["fixture-model"], k: 2, grader: false)
+
+    refute_empty records
+    records.each do |record|
+      refute_nil record.sample_ms, "#{record.task_name} carries no sample_ms"
+      assert_kind_of Integer, record.sample_ms
+      assert_operator record.sample_ms, :>=, 0
+    end
+  end
+
+  # A non-scored record needs the duration just as much: a four-minute
+  # refusal and a four-second one are different findings.
+  def test_a_non_scored_record_still_carries_its_wall_time
+    sampler = build_sampler(success_fake("no fenced code here at all"))
+    runner = Canary::Eval::Runner.new(sampler: sampler)
+
+    record = runner.call(entries: [build_entry], models: ["fixture-model"], k: 1, grader: false).first
+
+    refute record.scored?
+    refute_nil record.sample_ms
   end
 
   private

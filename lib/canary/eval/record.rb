@@ -13,12 +13,23 @@ module Canary
     #
     # schema_version is a plain field, not inferred from shape, so a future
     # format change can tell old records apart from new ones on disk rather
-    # than guessing from which keys happen to be present.
+    # than guessing from which keys happen to be present. Version 2 added
+    # sample_ms, and is also the first version whose sampling is trustworthy:
+    # every version-1 run on disk was drawn either greedily or with a seed
+    # that correlated the samples across tasks.
+    #
+    # +sample_ms+ is wall time for the whole attempt at one sample - render,
+    # provider round trip, and the queueing behind it - measured in the
+    # runner rather than the provider, because what a time-vs-accuracy
+    # comparison wants is how long an answer took to obtain, not how long
+    # the socket was open. It is set on every record, including non-scored
+    # ones: a refusal that took four minutes is a different thing from one
+    # that took four seconds.
     Record = Data.define(
       :schema_version, :task_name, :model, :sample_index, :render_mode,
       :scored, :non_score_reason, :passed,
       :prefilter_clean, :rollout_outcome, :passed_examples, :total_examples, :coverage_fraction,
-      :extractor_outcome, :stop_reason, :input_tokens, :output_tokens
+      :extractor_outcome, :stop_reason, :input_tokens, :output_tokens, :sample_ms
     ) do
       # No required fields beyond whatever the caller supplies (Runner's
       # four record-building sites each set a different subset; Report and

@@ -14,7 +14,7 @@ module Canary
     # Sampler#call itself stays a sequential Array.new(n), so the
     # concurrency across samples lives here, not there.
     class Runner
-      SCHEMA_VERSION = 1
+      SCHEMA_VERSION = 2
 
       # Deliberately low. Each concurrent job holds one in-flight provider
       # call against a rate-limited API, and every job whose response
@@ -60,7 +60,18 @@ module Canary
 
       private
 
+      # Wall time is stamped here rather than inside the sampler so it covers
+      # the whole attempt - queueing behind a busy engine included - and so
+      # that every return path below carries it without four call sites each
+      # remembering to.
       def run_one(job)
+        started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+        record = sample_and_grade(job)
+        elapsed = Process.clock_gettime(Process::CLOCK_MONOTONIC) - started
+        record.with(sample_ms: (elapsed * 1000).round)
+      end
+
+      def sample_and_grade(job)
         result = @sampler.call(job.entry, model: job.model, n: 1, base_index: job.index, grader: job.grader).first
 
         return provider_failure_record(job, result.failure) if result.failure? && !result.failure.text
