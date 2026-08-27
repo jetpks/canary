@@ -1,3 +1,4 @@
+require "digest"
 require "net/http"
 require "openssl"
 require "json"
@@ -82,7 +83,7 @@ module Canary
         @temperature = temperature
       end
 
-      # +sample_index+ becomes the request's seed, so the k samples of one
+      # +sample_index+ selects the request's seed, so the k samples of one
       # task differ from each other while a re-run of the same sweep asks
       # for the same set again - varying and reproducible, rather than
       # trading one for the other. A backend that ignores seed still samples
@@ -93,7 +94,8 @@ module Canary
       # 0.95) states that per-model rather than by moving this default.
       def sample(model:, prompt:, max_tokens: @max_tokens, sample_index: 0)
         body_hash = {
-          model: model, max_tokens: max_tokens, temperature: @temperature, seed: sample_index,
+          model: model, max_tokens: max_tokens, temperature: @temperature,
+          seed: self.class.seed_for(prompt, sample_index),
           messages: [{role: "user", content: prompt}]
         }.merge(@extra_body_by_model.fetch(model, {}))
         body = JSON.generate(body_hash)
@@ -105,6 +107,26 @@ module Canary
         handle_body(JSON.parse(response.body, symbolize_names: true), max_tokens)
       rescue SocketError, SystemCallError, Net::OpenTimeout, Net::ReadTimeout, OpenSSL::SSL::SSLError, IOError, JSON::ParserError => e
         Failure(Error.new(reason: :transport_error, message: "#{e.class}: #{e.message}"))
+      end
+
+      # The seed must vary with the prompt, not only with the sample index.
+      # A backend seeds its RNG per request, so an index-only seed replays
+      # the SAME uniform draw sequence for every task at that index: one
+      # high first draw makes every task whose top token is less than
+      # certain pick its second-ranked token at once, which correlates the
+      # samples instead of making them independent draws.
+      #
+      # That is not hypothetical. Measured 2026-08-27 with seed ==
+      # sample_index, qwen3.8-27b-mxfp8-concurrent1 opened with prose and
+      # slid into <tool_call> syntax on 19 of 44 tasks at sample 1, against
+      # 0 and 1 at samples 0 and 2 - a property of the seed, not the model,
+      # and it cost 15% of that arm's samples to the extractor.
+      #
+      # Digesting the prompt alongside the index keeps a re-run exactly
+      # reproducible while decorrelating the tasks. 8 hex digits because
+      # seed fields are commonly 32-bit.
+      def self.seed_for(prompt, sample_index)
+        Digest::SHA256.hexdigest("#{sample_index}\0#{prompt}")[0, 8].to_i(16)
       end
 
       private

@@ -182,7 +182,29 @@ class OpenAICompatTest < Minitest::Test
     assert_operator sent[:temperature], :>, 0, "a zero temperature decodes greedily and collapses k>1 to k=1"
   end
 
-  def test_seed_follows_the_sample_index_so_the_k_samples_of_a_task_differ
+  def test_seed_varies_with_the_sample_index_so_the_k_samples_of_a_task_differ
+    seeds = Array.new(3) { |index| Canary::Providers::OpenAICompat.seed_for("one prompt", index) }
+
+    assert_equal seeds.uniq.size, seeds.size, "a repeated seed asks for the same completion twice"
+  end
+
+  # The seed must depend on the prompt too. A backend seeds its RNG per
+  # request, so an index-only seed replays one draw sequence across every
+  # task at that index, correlating the samples: measured 2026-08-27, that
+  # sent the 27B into tool-call syntax on 19 of 44 tasks at sample 1 alone.
+  def test_seed_varies_with_the_prompt_so_tasks_do_not_share_a_draw_sequence
+    a = Canary::Providers::OpenAICompat.seed_for("task one", 1)
+    b = Canary::Providers::OpenAICompat.seed_for("task two", 1)
+
+    refute_equal a, b, "two tasks at the same sample index must not share a seed"
+  end
+
+  def test_seed_is_reproducible_for_the_same_prompt_and_index
+    assert_equal Canary::Providers::OpenAICompat.seed_for("p", 2),
+                 Canary::Providers::OpenAICompat.seed_for("p", 2)
+  end
+
+  def test_seed_reaches_the_request_body
     calls = []
     transport = ->(uri:, headers:, body:) {
       calls << body
@@ -190,12 +212,10 @@ class OpenAICompatTest < Minitest::Test
     }
     provider = Canary::Providers::OpenAICompat.new(base_url: BASE_URL, api_key: "k", transport: transport)
 
-    3.times { |index| provider.sample(model: "m", prompt: "p", sample_index: index) }
+    provider.sample(model: "m", prompt: "p", sample_index: 1)
 
-    seeds = calls.map { |body| JSON.parse(body, symbolize_names: true)[:seed] }
-
-    assert_equal [0, 1, 2], seeds
-    assert_equal seeds.uniq.size, seeds.size, "a repeated seed asks for the same completion twice"
+    assert_equal Canary::Providers::OpenAICompat.seed_for("p", 1),
+                 JSON.parse(calls.first, symbolize_names: true)[:seed]
   end
 
   def test_temperature_is_overridable_per_instance_and_per_model
