@@ -74,7 +74,9 @@ module Canary
       # reasoning-heavy model needs a different setting than one that
       # doesn't reason at all. Absent from the hash for a given model is a
       # no-op merge, not an error - most models need nothing extra.
-      def initialize(base_url:, api_key:, max_tokens: DEFAULT_MAX_TOKENS, read_timeout: DEFAULT_READ_TIMEOUT, transport: nil, extra_body_by_model: {}, temperature: DEFAULT_TEMPERATURE)
+      def initialize(base_url:, api_key:, max_tokens: DEFAULT_MAX_TOKENS,
+                     read_timeout: DEFAULT_READ_TIMEOUT, transport: nil,
+                     extra_body_by_model: {}, temperature: DEFAULT_TEMPERATURE)
         @uri = URI("#{base_url}/chat/completions")
         @api_key = api_key
         @max_tokens = max_tokens
