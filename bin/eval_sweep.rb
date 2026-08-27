@@ -85,7 +85,7 @@ module EvalSweep
   STUDIO_MODELS = [
     "qwen3.6-35b-a3b-4bit", "qwen3.6-35b-a3b-8bit", "qwen3-27b-optiq",
     "qwen3-122b-a10b", "nemotron-3-super", "qwen3.8-27b-mxfp8-concurrent4",
-    "qwen3.8-27b-mxfp8-concurrent1"
+    "qwen3.8-27b-mxfp8-concurrent1", "qwen3.8-flash-next-oq3"
   ].freeze
 
   # I29 R12 phase 1 Arm H: seven hosted consumer-class open-weight models
@@ -128,6 +128,7 @@ module EvalSweep
     "nemotron-3-super" => :studio,
     "qwen3.8-27b-mxfp8-concurrent4" => :studio,
     "qwen3.8-27b-mxfp8-concurrent1" => :studio,
+    "qwen3.8-flash-next-oq3" => :studio,
     "qwen/qwen3.6-27b" => :openrouter,
     "qwen/qwen3.6-35b-a3b" => :openrouter,
     "google/gemma-4-26b-a4b-it" => :openrouter,
@@ -197,6 +198,7 @@ module EvalSweep
     "nemotron-3-super" => {input_token_price: 0.0, output_token_price: 0.0},
     "qwen3.8-27b-mxfp8-concurrent4" => {input_token_price: 0.0, output_token_price: 0.0},
     "qwen3.8-27b-mxfp8-concurrent1" => {input_token_price: 0.0, output_token_price: 0.0},
+    "qwen3.8-flash-next-oq3" => {input_token_price: 0.0, output_token_price: 0.0},
     "qwen/qwen3.6-27b" => {input_token_price: 0.0000003, output_token_price: 0.0000032},
     "qwen/qwen3.6-35b-a3b" => {input_token_price: 0.0000002, output_token_price: 0.0000016},
     "google/gemma-4-26b-a4b-it" => {input_token_price: 0.00000012, output_token_price: 0.0000004},
@@ -284,7 +286,28 @@ module EvalSweep
     # pass rate 0.8636, 0 runaways) - dropping or approximating this
     # fragment measures a different arm than the one that's committed.
     "qwen3.8-27b-mxfp8-concurrent4" => {},
-    "qwen3.8-27b-mxfp8-concurrent1" => {reasoning_effort: "none"}
+    "qwen3.8-27b-mxfp8-concurrent1" => {reasoning_effort: "none"},
+    #
+    # flash-next-oq3 (Qwen3.8-Flash-Next, qwen4_exp 120B/A6B sparse-MoE VLM
+    # driven text-only, oQ3 mixed-precision). "none" for the same reason
+    # concurrent1 carries it, and with the same arm-comparability argument:
+    # this model's chat template opens an unclosed <think> block and defaults
+    # to reasoning_effort "xhigh", which on a hidden-grader task is precisely
+    # the shape that ran concurrent1 out of its full 16_384-token budget
+    # guessing at withheld assertions. Suppressing thinking also makes this a
+    # like-for-like read against the committed concurrent1 arm rather than a
+    # different arm that happens to share a corpus.
+    #
+    # Note this alias speaks the *template's* effort vocabulary
+    # (xhigh/medium/low), not OpenAI's - it raises on "high" - but "none" is
+    # read by the gateway as a disable rather than as a level, so it passes
+    # through uncoerced and reaches mlx-vlm as enable_thinking: false.
+    # Verified live through the TLS edge before this arm was added.
+    #
+    # A thinking-enabled arm is a separate, deliberately unbought measurement:
+    # at ~27 tok/s decode a 16_384-token reasoning budget is ~10 minutes per
+    # call, i.e. ~22 hours for one k=3 sweep.
+    "qwen3.8-flash-next-oq3" => {reasoning_effort: "none"}
   }.freeze
 
   # I26 (I25 F4): eval_sweep.rb never pinned OpenRouter routing, so every

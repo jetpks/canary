@@ -124,20 +124,41 @@ class EvalSweepTest < Minitest::Test
   # strict schema may reject the unknown body field"). That premise was
   # speculative and is now falsified: sent live through the TLS edge
   # 2026-08-15, the gateway forwards reasoning_effort untouched and the
-  # engine honours it. Only the two mxfp8 arms carry an entry: concurrent4's
-  # is an explicit no-op empty fragment (its own engine-side thinking_budget
-  # bounds reasoning instead), and concurrent1's suppresses reasoning
-  # outright via reasoning_effort: "none" (its registry sibling can't accept
-  # a thinking_budget at all, so request-side suppression is the only bound
-  # available). The rest of the studio arm is left at the model's own
-  # default.
-  def test_only_the_mxfp8_studio_arms_carry_a_thinking_effort_entry
-    (EvalSweep::STUDIO_MODELS - ["qwen3.8-27b-mxfp8-concurrent4", "qwen3.8-27b-mxfp8-concurrent1"]).each do |model|
+  # engine honours it.
+  #
+  # An arm earns an entry only when the engine cannot bound its reasoning by
+  # itself; everything else is left at the model's own default. The three
+  # that qualify, and why:
+  #
+  #   concurrent4      an explicit no-op empty fragment - its own engine-side
+  #                    thinking_budget bounds reasoning instead.
+  #   concurrent1      reasoning_effort: "none". Its registry sibling cannot
+  #                    accept a thinking_budget at all (the server raises when
+  #                    a drafter and a budget are both present), so
+  #                    request-side suppression is the only bound available.
+  #   flash-next-oq3   reasoning_effort: "none". Its template opens an
+  #                    unclosed <think> block and defaults to effort "xhigh",
+  #                    which is the same shape that ran concurrent1 out of its
+  #                    full 16_384-token budget guessing at withheld
+  #                    assertions. Suppressing also keeps it a like-for-like
+  #                    read against the committed concurrent1 arm.
+  #
+  # Named here rather than inline so adding an arm is one line plus a reason,
+  # not a literal repeated across three assertions.
+  THINKING_BOUNDED_ARMS = %w[
+    qwen3.8-27b-mxfp8-concurrent4
+    qwen3.8-27b-mxfp8-concurrent1
+    qwen3.8-flash-next-oq3
+  ].freeze
+
+  def test_only_the_thinking_bounded_studio_arms_carry_a_thinking_effort_entry
+    (EvalSweep::STUDIO_MODELS - THINKING_BOUNDED_ARMS).each do |model|
       refute EvalSweep::THINKING_EFFORT.key?(model), "#{model} unexpectedly has a THINKING_EFFORT entry"
     end
 
     assert_equal({}, EvalSweep::THINKING_EFFORT.fetch("qwen3.8-27b-mxfp8-concurrent4"))
     assert_equal({reasoning_effort: "none"}, EvalSweep::THINKING_EFFORT.fetch("qwen3.8-27b-mxfp8-concurrent1"))
+    assert_equal({reasoning_effort: "none"}, EvalSweep::THINKING_EFFORT.fetch("qwen3.8-flash-next-oq3"))
   end
 
   # AC6: studio models get no PROVIDER_PINS entry - one backend exists by
@@ -148,18 +169,20 @@ class EvalSweepTest < Minitest::Test
     end
   end
 
-  # extra_body_for stays a no-op merge for every studio model except the two
-  # mxfp8 arms (studio models never carry a PROVIDER_PINS entry - one
-  # backend exists by construction): concurrent4's fragment is an explicit
-  # empty no-op, concurrent1's carries the reasoning_effort: "none"
-  # suppression that reproduces the committed 0.8636 arm.
-  def test_extra_body_for_studio_models_is_empty_except_the_two_mxfp8_arms
-    (EvalSweep::STUDIO_MODELS - ["qwen3.8-27b-mxfp8-concurrent4", "qwen3.8-27b-mxfp8-concurrent1"]).each do |model|
+  # extra_body_for stays a no-op merge for every studio model outside
+  # THINKING_BOUNDED_ARMS (studio models never carry a PROVIDER_PINS entry -
+  # one backend exists by construction): concurrent4's fragment is an
+  # explicit empty no-op, while concurrent1 and flash-next-oq3 both carry the
+  # reasoning_effort: "none" suppression - concurrent1's is what reproduces
+  # the committed 0.8636 arm.
+  def test_extra_body_for_studio_models_is_empty_outside_the_thinking_bounded_arms
+    (EvalSweep::STUDIO_MODELS - THINKING_BOUNDED_ARMS).each do |model|
       assert_empty EvalSweep.extra_body_for(model)
     end
 
     assert_equal({}, EvalSweep.extra_body_for("qwen3.8-27b-mxfp8-concurrent4"))
     assert_equal({reasoning_effort: "none"}, EvalSweep.extra_body_for("qwen3.8-27b-mxfp8-concurrent1"))
+    assert_equal({reasoning_effort: "none"}, EvalSweep.extra_body_for("qwen3.8-flash-next-oq3"))
   end
 
   # AC3: load_env! must not demand any credential for a studio-only model
