@@ -288,6 +288,23 @@ class RunnerTest < Minitest::Test
     refute_nil record.sample_ms
   end
 
+  # A batching engine answers concurrent identical prompts once and repeats
+  # it, so the k samples of a task must not be schedulable together. Order is
+  # the guard: every task's sample 0 is emitted before any task's sample 1.
+  def test_samples_of_one_task_are_never_adjacent_in_the_schedule
+    order = []
+    sampler = build_sampler(success_fake(VALID_CODE_RESPONSE))
+    runner = Canary::Eval::Runner.new(sampler: sampler, concurrency: 1)
+
+    runner.call(entries: [build_entry("a"), build_entry("b")], models: ["m"], k: 3, grader: false) do |record|
+      order << [record.task_name, record.sample_index]
+    end
+
+    indices = order.map(&:last)
+
+    assert_equal [0, 0, 1, 1, 2, 2], indices, "schedule must be sample-major, not task-major"
+  end
+
   private
 
   def truncated_failure_fake(text)
@@ -312,9 +329,9 @@ class RunnerTest < Minitest::Test
     )
   end
 
-  def build_entry
+  def build_entry(name = "eval_fixture_task")
     Canary::TaskRepo::Entry.new(
-      name: "eval_fixture_task",
+      name: name,
       statement: "Implement Adder.call(a, b), returning their sum.",
       adapter: :minitest,
       reference: Canary::Task.new(solution_path: File.join(FIXTURES, "solution.rb"), test_path: File.join(FIXTURES, "grader.rb"), adapter: :minitest)

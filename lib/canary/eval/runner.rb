@@ -49,8 +49,22 @@ module Canary
       # caught here: it propagates out of Sync and aborts the run, and does
       # not itself yield a Record - it is a harness crash, not a model
       # non-score, and the two must not be reported the same way.
+      # Sample-major, not task-major. The k samples of one task must never be
+      # in flight together: a batching engine puts concurrent requests in one
+      # batch, and a batch of the same prompt comes back as one answer
+      # repeated k times however the seeds differ. Measured 2026-08-27 against
+      # qwen3.8-27b-mxfp8-concurrent4 - the same prompt at three seeds gave
+      # 2/3 distinct answers issued one at a time and 1/3 issued together, and
+      # a task-major sweep at concurrency 4 collapsed 9 of its first 11 tasks
+      # to byte-identical triples.
+      #
+      # Emitting every task's sample 0 before any task's sample 1 means the
+      # jobs in flight are different prompts, which batch harmlessly. Job
+      # identity is unchanged - each still carries its own sample index - so
+      # this reorders execution only.
       def call(entries:, models:, k:, grader: false, &on_record)
-        jobs = entries.product(models).flat_map { |entry, model| Array.new(k) { |index| Job.new(entry, model, index, grader) } }
+        pairs = entries.product(models)
+        jobs = Array.new(k) { |index| pairs.map { |entry, model| Job.new(entry, model, index, grader) } }.flatten
 
         Sync do
           semaphore = Async::Semaphore.new(@concurrency)
