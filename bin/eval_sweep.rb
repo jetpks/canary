@@ -326,10 +326,20 @@ module EvalSweep
     # single-variable read on the checkpoint.
     "qwen3.8-flash-next-reap288" => {reasoning_effort: "none"},
     #
-    # The two qwen3.6-35b-a3b arms are reasoning models on the mlx engine,
-    # and mlx_lm.server takes neither reasoning_effort nor a thinking budget
-    # - its lever is chat_template_kwargs, forwarded to the tokenizer's
-    # apply_chat_template (server.py:1192).
+    # The two qwen3.6-35b-a3b arms moved from the mlx engine to mlx-vlm
+    # 2026-09-01, and that retires the fragment they used to carry.
+    #
+    # mlx_lm.server took neither reasoning_effort nor a thinking budget, so
+    # chat_template_kwargs forwarded to apply_chat_template was the only
+    # lever. mlx-vlm reads no chat_template_kwargs request field at all - it
+    # builds those internally from the --enable-thinking LAUNCH flag
+    # (generate/dispatch.py) - so the old fragment would now be written to a
+    # field nothing reads: config that looks like suppression and is not.
+    #
+    # Their gateway aliases omit enable_thinking, which turns thinking off
+    # for the whole child, so these arms need no request-side fragment. They
+    # also now carry a repetition penalty declared on the alias, which is the
+    # stronger stop they always needed - see the models.yml comment.
     #
     # They ran unbounded until now only because nothing was sampling them:
     # under the old greedy default they terminated on their own, and at
@@ -342,8 +352,8 @@ module EvalSweep
     # Off rather than merely bounded, matching concurrent1 and
     # flash-next-oq3: all four arms then answer a hidden-grader task without
     # reasoning, which is the like-for-like comparison this sweep is for.
-    "qwen3.6-35b-a3b-4bit" => {chat_template_kwargs: {enable_thinking: false}},
-    "qwen3.6-35b-a3b-8bit" => {chat_template_kwargs: {enable_thinking: false}}
+    "qwen3.6-35b-a3b-4bit" => {},
+    "qwen3.6-35b-a3b-8bit" => {}
   }.freeze
 
   # I26 (I25 F4): eval_sweep.rb never pinned OpenRouter routing, so every

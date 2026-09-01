@@ -170,10 +170,11 @@ class EvalSweepTest < Minitest::Test
     assert_equal({reasoning_effort: "none"}, EvalSweep::THINKING_EFFORT.fetch("qwen3.8-flash-next-oq3"))
     assert_equal({reasoning_effort: "none"}, EvalSweep::THINKING_EFFORT.fetch("qwen3.8-flash-next-reap288"))
 
-    # The mlx engine takes neither reasoning_effort nor a thinking budget;
-    # chat_template_kwargs is its only lever.
+    # Both a3b arms moved to mlx-vlm, which reads no chat_template_kwargs
+    # request field - thinking is off via the launch flag their alias omits,
+    # so an explicit empty no-op is the honest fragment here.
     %w[qwen3.6-35b-a3b-4bit qwen3.6-35b-a3b-8bit].each do |arm|
-      assert_equal({chat_template_kwargs: {enable_thinking: false}}, EvalSweep::THINKING_EFFORT.fetch(arm))
+      assert_equal({}, EvalSweep::THINKING_EFFORT.fetch(arm))
     end
   end
 
@@ -185,6 +186,11 @@ class EvalSweepTest < Minitest::Test
     end
   end
 
+  # Note both a3b arms now hold an explicit empty fragment rather than a
+  # chat_template_kwargs one: they moved to mlx-vlm, which reads no such
+  # request field, and their thinking is off via the launch flag their
+  # gateway alias omits.
+  #
   # extra_body_for stays a no-op merge for every studio model outside
   # THINKING_BOUNDED_ARMS (studio models never carry a PROVIDER_PINS entry -
   # one backend exists by construction): concurrent4's fragment is an
@@ -200,7 +206,7 @@ class EvalSweepTest < Minitest::Test
     assert_equal({reasoning_effort: "none"}, EvalSweep.extra_body_for("qwen3.8-27b-mxfp8-concurrent1"))
     assert_equal({reasoning_effort: "none"}, EvalSweep.extra_body_for("qwen3.8-flash-next-oq3"))
     assert_equal({reasoning_effort: "none"}, EvalSweep.extra_body_for("qwen3.8-flash-next-reap288"))
-    assert_equal({chat_template_kwargs: {enable_thinking: false}}, EvalSweep.extra_body_for("qwen3.6-35b-a3b-4bit"))
+    assert_equal({}, EvalSweep.extra_body_for("qwen3.6-35b-a3b-4bit"))
   end
 
   # AC3: load_env! must not demand any credential for a studio-only model
