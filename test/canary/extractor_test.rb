@@ -43,11 +43,15 @@ class ExtractorTest < Minitest::Test
     assert_equal "module Memoizer\nend", result.code
   end
 
-  def test_no_fence_at_all_is_a_distinguishable_refusal
-    result = Canary::Extractor.call("Sure, here is Memoizer: module Memoizer; end")
+  # Only emptiness refuses without a fence now. Text that isn't valid Ruby is a
+  # submission the verifier fails, not an absence of one.
+  def test_only_an_empty_answer_refuses_without_a_fence
+    ["", "   ", "\n\n"].each do |empty|
+      result = Canary::Extractor.call(empty)
 
-    assert_equal :no_fenced_code, result.outcome
-    assert_nil result.code
+      assert_equal :no_fenced_code, result.outcome, "#{empty.inspect} was accepted as code"
+      assert_nil result.code
+    end
   end
 
   def test_a_fence_tagged_a_different_language_is_refused_not_guessed
@@ -115,20 +119,28 @@ class ExtractorTest < Minitest::Test
     assert_equal :bare_ruby, result.outcome
   end
 
-  # Parsing alone is far too weak a test to accept on: bare words chain into
-  # method calls, so ordinary prose is valid Ruby. Each of these parses clean
-  # and must still be refused — this is the assertion that keeps the fallback
-  # from swallowing refusals and turning them into graded failures.
-  def test_prose_that_parses_as_ruby_is_still_refused
+  # Unfenced text that isn't a Ruby definition is still SUBMITTED — it just
+  # carries the :bare_malformed label so a later reader can tell it apart from
+  # a clean unfenced answer. The verifier fails it; the extractor does not
+  # excuse it. Prose lands here because bare words chain into method calls, so
+  # "no fenced code here at all" is syntactically valid Ruby that defines
+  # nothing — parsing alone was never a strong enough test to sort answers
+  # from sentences, which is why the label exists rather than a second gate.
+  def test_unfenced_non_ruby_is_submitted_as_malformed_not_refused
     ["no fenced code here at all",
      "OK",
      "I cannot help with that request",
-     "   "].each do |prose|
-      result = Canary::Extractor.call(prose)
+     "def broken(  # unclosed"].each do |text|
+      result = Canary::Extractor.call(text)
 
-      assert_equal :no_fenced_code, result.outcome, "#{prose.inspect} was accepted as code"
-      assert_nil result.code
+      assert_equal :bare_malformed, result.outcome, "#{text.inspect} was refused"
+      assert_equal text.strip, result.code
     end
+  end
+
+  # The distinction the label buys: this one IS clean Ruby, just unfenced.
+  def test_a_clean_unfenced_definition_is_bare_ruby_not_malformed
+    assert_equal :bare_ruby, Canary::Extractor.call("def a\n  1\nend").outcome
   end
 
   # The fallback is for answers with NO fence. A response that fenced
@@ -141,8 +153,8 @@ class ExtractorTest < Minitest::Test
     assert_nil result.code
   end
 
-  def test_accepted_outcomes_are_the_two_gradable_shapes
-    assert_equal %i[ok bare_ruby], Canary::Extractor::ACCEPTED
+  def test_accepted_outcomes_are_the_gradable_shapes
+    assert_equal %i[ok bare_ruby bare_malformed], Canary::Extractor::ACCEPTED
   end
 
   private

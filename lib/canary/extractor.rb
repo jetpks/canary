@@ -26,7 +26,7 @@ module Canary
     # accepts anyway (see .bare_ruby?). Named here rather than compared
     # inline so the runner has one place to ask, and adding a third shape is
     # a data change here rather than a condition edited there.
-    ACCEPTED = %i[ok bare_ruby].freeze
+    ACCEPTED = %i[ok bare_ruby bare_malformed].freeze
 
     def self.call(text)
       new(text).call
@@ -39,7 +39,7 @@ module Canary
     def call
       segment = ruby_segment
       return Result.new(code: body_of(segment), outcome: :ok) if segment
-      return Result.new(code: bare_text, outcome: :bare_ruby) if bare_ruby?
+      return Result.new(code: bare_text, outcome: bare_outcome) if submitted_bare?
 
       Result.new(code: nil, outcome: refusal_outcome)
     end
@@ -79,13 +79,38 @@ module Canary
     # Empty falls out of the same requirement rather than needing its own
     # guard - Prism parses "" happily as an empty program, and an empty
     # program defines nothing.
-    def bare_ruby?
-      return false if @text.include?(FENCE)
+    # An unfenced, non-empty answer is a SUBMISSION. Whether it is good Ruby is
+    # the verifier's question, not the extractor's.
+    #
+    # Only emptiness refuses here. Anything else the model wrote where an
+    # answer belongs gets handed to the prefilter, which is already the path a
+    # FENCED answer that doesn't parse takes: Prefilter tier 0 finds the parse
+    # error, Verifier returns passed: false, and the runner records
+    # scored: true - "the model's own code falling short". Excusing the
+    # unfenced case was an asymmetry, not a policy: it let a model that wrote
+    # broken Ruby without a fence drop out of the denominator entirely, while
+    # the same broken Ruby inside a fence counted against it.
+    #
+    # Measured 2026-09-01: olmo-3-7b lost 56 of 132 samples to this, writing
+    # things like "if other respond_to? :to_h" - a missing dot, plainly an
+    # attempt at the task, scored as though it had never answered. That
+    # flattered its rate, since refusals leave the denominator.
+    #
+    # Truncation is still NOT a failure: verified_record defers to
+    # Prefilter::Report#truncated, so a generation cut off mid-construct
+    # remains a non-score (:truncated) rather than being blamed on the model.
+    def submitted_bare?
+      !@text.include?(FENCE) && !bare_text.empty?
+    end
 
+    # Both are graded; the label preserves which shape arrived, so a later
+    # reader can separate "wrote clean Ruby, just no fence" from "wrote
+    # something that isn't valid Ruby at all" without re-parsing the corpus.
+    def bare_outcome
       result = Prism.parse(bare_text)
-      return false unless result.success?
+      return :bare_malformed unless result.success?
 
-      !!result.value.breadth_first_search { |node| definition?(node) }
+      result.value.breadth_first_search { |node| definition?(node) } ? :bare_ruby : :bare_malformed
     end
 
     def definition?(node)

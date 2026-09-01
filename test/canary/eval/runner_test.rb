@@ -92,14 +92,17 @@ class RunnerTest < Minitest::Test
     assert_nil record.passed
   end
 
+  # Fences another language: the model made a choice, and that stays a refusal.
+  # Bare unfenced text is NOT a refusal any more - it is a submission the
+  # prefilter judges - so this uses the shape that still refuses.
   def test_an_extractor_refusal_is_a_non_score_never_a_passed_verdict
-    runner = Canary::Eval::Runner.new(sampler: build_sampler(success_fake(NO_FENCE_RESPONSE)))
+    runner = Canary::Eval::Runner.new(sampler: build_sampler(success_fake("```python\ndef wrap():\n    pass\n```")))
 
     record = runner.call(entries: [build_entry], models: ["fixture-model"], k: 1, grader: false).first
 
     refute record.scored?
     assert_equal :extractor_refusal, record.non_score_reason
-    assert_equal :no_fenced_code, record.extractor_outcome
+    assert_equal :no_ruby_fence, record.extractor_outcome
     assert_nil record.passed
   end
 
@@ -279,7 +282,7 @@ class RunnerTest < Minitest::Test
   # A non-scored record needs the duration just as much: a four-minute
   # refusal and a four-second one are different findings.
   def test_a_non_scored_record_still_carries_its_wall_time
-    sampler = build_sampler(success_fake("no fenced code here at all"))
+    sampler = build_sampler(success_fake("```python\ndef wrap():\n    pass\n```"))
     runner = Canary::Eval::Runner.new(sampler: sampler)
 
     record = runner.call(entries: [build_entry], models: ["fixture-model"], k: 1, grader: false).first
