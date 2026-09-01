@@ -85,7 +85,8 @@ module EvalSweep
   STUDIO_MODELS = [
     "qwen3.6-35b-a3b-4bit", "qwen3.6-35b-a3b-8bit", "qwen3-27b-optiq",
     "qwen3-122b-a10b", "nemotron-3-super", "qwen3.8-27b-mxfp8-concurrent4",
-    "qwen3.8-27b-mxfp8-concurrent1", "qwen3.8-flash-next-oq3"
+    "qwen3.8-27b-mxfp8-concurrent1", "qwen3.8-flash-next-oq3",
+    "qwen3.8-flash-next-reap288"
   ].freeze
 
   # I29 R12 phase 1 Arm H: seven hosted consumer-class open-weight models
@@ -129,6 +130,7 @@ module EvalSweep
     "qwen3.8-27b-mxfp8-concurrent4" => :studio,
     "qwen3.8-27b-mxfp8-concurrent1" => :studio,
     "qwen3.8-flash-next-oq3" => :studio,
+    "qwen3.8-flash-next-reap288" => :studio,
     "qwen/qwen3.6-27b" => :openrouter,
     "qwen/qwen3.6-35b-a3b" => :openrouter,
     "google/gemma-4-26b-a4b-it" => :openrouter,
@@ -199,6 +201,7 @@ module EvalSweep
     "qwen3.8-27b-mxfp8-concurrent4" => {input_token_price: 0.0, output_token_price: 0.0},
     "qwen3.8-27b-mxfp8-concurrent1" => {input_token_price: 0.0, output_token_price: 0.0},
     "qwen3.8-flash-next-oq3" => {input_token_price: 0.0, output_token_price: 0.0},
+    "qwen3.8-flash-next-reap288" => {input_token_price: 0.0, output_token_price: 0.0},
     "qwen/qwen3.6-27b" => {input_token_price: 0.0000003, output_token_price: 0.0000032},
     "qwen/qwen3.6-35b-a3b" => {input_token_price: 0.0000002, output_token_price: 0.0000016},
     "google/gemma-4-26b-a4b-it" => {input_token_price: 0.00000012, output_token_price: 0.0000004},
@@ -308,6 +311,19 @@ module EvalSweep
     # at ~27 tok/s decode a 16_384-token reasoning budget is ~10 minutes per
     # call, i.e. ~22 hours for one k=3 sweep.
     "qwen3.8-flash-next-oq3" => {reasoning_effort: "none"},
+    #
+    # flash-next-reap288: the same qwen4_exp trunk and the same chat template
+    # as flash-next-oq3, with 288 of 512 experts per MoE layer pruned out by
+    # REAP saliency and quantized at 4-bit. Carries "none" for exactly the
+    # reasons oq3 does, and the arm-comparability argument is the whole point
+    # here: this arm exists to be read against the committed
+    # results/run-20260828T003027Z/ oq3 arm, so every request-shaping knob has
+    # to match it rather than merely be defensible on its own.
+    #
+    # Its gateway alias differs from qwen3.8-flash-next-oq3 in `model` only
+    # (verified by diffing the resolved registry entries), so the sweep is a
+    # single-variable read on the checkpoint.
+    "qwen3.8-flash-next-reap288" => {reasoning_effort: "none"},
     #
     # The two qwen3.6-35b-a3b arms are reasoning models on the mlx engine,
     # and mlx_lm.server takes neither reasoning_effort nor a thinking budget

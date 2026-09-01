@@ -142,6 +142,12 @@ class EvalSweepTest < Minitest::Test
   #                    full 16_384-token budget guessing at withheld
   #                    assertions. Suppressing also keeps it a like-for-like
   #                    read against the committed concurrent1 arm.
+  #   flash-next-reap288
+  #                    reasoning_effort: "none". Same trunk and same chat
+  #                    template as flash-next-oq3, so the same unclosed
+  #                    <think> / "xhigh" default applies. It exists to be read
+  #                    against the committed oq3 arm, so it has to carry the
+  #                    identical suppression or it is a different measurement.
   #
   # Named here rather than inline so adding an arm is one line plus a reason,
   # not a literal repeated across three assertions.
@@ -149,6 +155,7 @@ class EvalSweepTest < Minitest::Test
     qwen3.8-27b-mxfp8-concurrent4
     qwen3.8-27b-mxfp8-concurrent1
     qwen3.8-flash-next-oq3
+    qwen3.8-flash-next-reap288
     qwen3.6-35b-a3b-4bit
     qwen3.6-35b-a3b-8bit
   ].freeze
@@ -161,6 +168,7 @@ class EvalSweepTest < Minitest::Test
     assert_equal({}, EvalSweep::THINKING_EFFORT.fetch("qwen3.8-27b-mxfp8-concurrent4"))
     assert_equal({reasoning_effort: "none"}, EvalSweep::THINKING_EFFORT.fetch("qwen3.8-27b-mxfp8-concurrent1"))
     assert_equal({reasoning_effort: "none"}, EvalSweep::THINKING_EFFORT.fetch("qwen3.8-flash-next-oq3"))
+    assert_equal({reasoning_effort: "none"}, EvalSweep::THINKING_EFFORT.fetch("qwen3.8-flash-next-reap288"))
 
     # The mlx engine takes neither reasoning_effort nor a thinking budget;
     # chat_template_kwargs is its only lever.
@@ -191,6 +199,7 @@ class EvalSweepTest < Minitest::Test
     assert_equal({}, EvalSweep.extra_body_for("qwen3.8-27b-mxfp8-concurrent4"))
     assert_equal({reasoning_effort: "none"}, EvalSweep.extra_body_for("qwen3.8-27b-mxfp8-concurrent1"))
     assert_equal({reasoning_effort: "none"}, EvalSweep.extra_body_for("qwen3.8-flash-next-oq3"))
+    assert_equal({reasoning_effort: "none"}, EvalSweep.extra_body_for("qwen3.8-flash-next-reap288"))
     assert_equal({chat_template_kwargs: {enable_thinking: false}}, EvalSweep.extra_body_for("qwen3.6-35b-a3b-4bit"))
   end
 
