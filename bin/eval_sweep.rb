@@ -87,7 +87,7 @@ module EvalSweep
     "qwen3.6-35b-a3b-4bit", "qwen3.6-35b-a3b-8bit", "qwen3-27b-optiq",
     "qwen3-122b-a10b", "nemotron-3-super", "qwen3.8-27b-mxfp8-concurrent4",
     "qwen3.8-27b-mxfp8-concurrent1", "qwen3.8-flash-next-oq3",
-    "qwen3.8-flash-next-reap288"
+    "qwen3.8-flash-next-reap288", "qwen3.8-flash-next-ream288"
   ].freeze
 
   # I29 R12 phase 1 Arm H: seven hosted consumer-class open-weight models
@@ -132,6 +132,7 @@ module EvalSweep
     "qwen3.8-27b-mxfp8-concurrent1" => :studio,
     "qwen3.8-flash-next-oq3" => :studio,
     "qwen3.8-flash-next-reap288" => :studio,
+    "qwen3.8-flash-next-ream288" => :studio,
     "qwen/qwen3.6-27b" => :openrouter,
     "qwen/qwen3.6-35b-a3b" => :openrouter,
     "google/gemma-4-26b-a4b-it" => :openrouter,
@@ -203,6 +204,7 @@ module EvalSweep
     "qwen3.8-27b-mxfp8-concurrent1" => {input_token_price: 0.0, output_token_price: 0.0},
     "qwen3.8-flash-next-oq3" => {input_token_price: 0.0, output_token_price: 0.0},
     "qwen3.8-flash-next-reap288" => {input_token_price: 0.0, output_token_price: 0.0},
+    "qwen3.8-flash-next-ream288" => {input_token_price: 0.0, output_token_price: 0.0},
     "qwen/qwen3.6-27b" => {input_token_price: 0.0000003, output_token_price: 0.0000032},
     "qwen/qwen3.6-35b-a3b" => {input_token_price: 0.0000002, output_token_price: 0.0000016},
     "google/gemma-4-26b-a4b-it" => {input_token_price: 0.00000012, output_token_price: 0.0000004},
@@ -325,6 +327,13 @@ module EvalSweep
     # (verified by diffing the resolved registry entries), so the sweep is a
     # single-variable read on the checkpoint.
     "qwen3.8-flash-next-reap288" => {reasoning_effort: "none"},
+    #
+    # flash-next-ream288: WaveCut's merge-instead-of-prune derivative of the
+    # reap288 build. Carries "none" for the same reason, and the fragment must
+    # stay byte-identical to reap288's - merge vs prune is the only thing this
+    # pair is allowed to differ in, on the gateway alias (which differs in
+    # `model` only) and here.
+    "qwen3.8-flash-next-ream288" => {reasoning_effort: "none"},
     #
     # The two qwen3.6-35b-a3b arms moved from the mlx engine to mlx-vlm
     # 2026-09-01, and that retires the fragment they used to carry.

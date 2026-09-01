@@ -156,6 +156,7 @@ class EvalSweepTest < Minitest::Test
     qwen3.8-27b-mxfp8-concurrent1
     qwen3.8-flash-next-oq3
     qwen3.8-flash-next-reap288
+    qwen3.8-flash-next-ream288
     qwen3.6-35b-a3b-4bit
     qwen3.6-35b-a3b-8bit
   ].freeze
@@ -169,6 +170,7 @@ class EvalSweepTest < Minitest::Test
     assert_equal({reasoning_effort: "none"}, EvalSweep::THINKING_EFFORT.fetch("qwen3.8-27b-mxfp8-concurrent1"))
     assert_equal({reasoning_effort: "none"}, EvalSweep::THINKING_EFFORT.fetch("qwen3.8-flash-next-oq3"))
     assert_equal({reasoning_effort: "none"}, EvalSweep::THINKING_EFFORT.fetch("qwen3.8-flash-next-reap288"))
+    assert_equal({reasoning_effort: "none"}, EvalSweep::THINKING_EFFORT.fetch("qwen3.8-flash-next-ream288"))
 
     # Both a3b arms moved to mlx-vlm, which reads no chat_template_kwargs
     # request field - thinking is off via the launch flag their alias omits,
@@ -206,6 +208,7 @@ class EvalSweepTest < Minitest::Test
     assert_equal({reasoning_effort: "none"}, EvalSweep.extra_body_for("qwen3.8-27b-mxfp8-concurrent1"))
     assert_equal({reasoning_effort: "none"}, EvalSweep.extra_body_for("qwen3.8-flash-next-oq3"))
     assert_equal({reasoning_effort: "none"}, EvalSweep.extra_body_for("qwen3.8-flash-next-reap288"))
+    assert_equal({reasoning_effort: "none"}, EvalSweep.extra_body_for("qwen3.8-flash-next-ream288"))
     assert_equal({}, EvalSweep.extra_body_for("qwen3.6-35b-a3b-4bit"))
   end
 
