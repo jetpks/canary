@@ -93,7 +93,7 @@ module Canary
         sample = result.success? ? result.success : sample_from_failure(result.failure)
         extracted = Extractor.call(sample.text)
 
-        return extractor_refusal_record(job, sample, extracted) unless extracted.outcome == :ok
+        return extractor_refusal_record(job, sample, extracted) unless Extractor::ACCEPTED.include?(extracted.outcome)
 
         verified_record(job, sample, extracted)
       end
