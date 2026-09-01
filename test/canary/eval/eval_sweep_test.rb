@@ -159,6 +159,8 @@ class EvalSweepTest < Minitest::Test
     qwen3.8-flash-next-ream288
     qwen3.6-35b-a3b-4bit
     qwen3.6-35b-a3b-8bit
+    nemotron-3-super
+    qwen3-122b-a10b
   ].freeze
 
   def test_only_the_thinking_bounded_studio_arms_carry_a_thinking_effort_entry
@@ -172,12 +174,20 @@ class EvalSweepTest < Minitest::Test
     assert_equal({reasoning_effort: "none"}, EvalSweep::THINKING_EFFORT.fetch("qwen3.8-flash-next-reap288"))
     assert_equal({reasoning_effort: "none"}, EvalSweep::THINKING_EFFORT.fetch("qwen3.8-flash-next-ream288"))
 
-    # Both a3b arms moved to mlx-vlm, which reads no chat_template_kwargs
-    # request field - thinking is off via the launch flag their alias omits,
-    # so an explicit empty no-op is the honest fragment here.
-    %w[qwen3.6-35b-a3b-4bit qwen3.6-35b-a3b-8bit].each do |arm|
-      assert_equal({}, EvalSweep::THINKING_EFFORT.fetch(arm))
+    # The a3b arms' alias no longer omits enable_thinking (gateway e30cbac),
+    # so the empty no-op that used to mean "off" would now mean "on" - these
+    # carry explicit suppression instead, as do the two 120B-class arms that
+    # moved to mlx-vlm in the same change. All four have committed records
+    # bought with thinking off; the fragment is what keeps a rerun readable
+    # against them.
+    %w[qwen3.6-35b-a3b-4bit qwen3.6-35b-a3b-8bit
+       nemotron-3-super qwen3-122b-a10b].each do |arm|
+      assert_equal({reasoning_effort: "none"}, EvalSweep::THINKING_EFFORT.fetch(arm))
     end
+
+    # qwen3-coder-next is non-thinking by construction, so it stays outside
+    # THINKING_BOUNDED_ARMS and the refute above covers it.
+    refute EvalSweep::THINKING_EFFORT.key?("qwen3-coder-next")
   end
 
   # AC6: studio models get no PROVIDER_PINS entry - one backend exists by
@@ -195,21 +205,23 @@ class EvalSweepTest < Minitest::Test
   #
   # extra_body_for stays a no-op merge for every studio model outside
   # THINKING_BOUNDED_ARMS (studio models never carry a PROVIDER_PINS entry -
-  # one backend exists by construction): concurrent4's fragment is an
-  # explicit empty no-op, while concurrent1 and flash-next-oq3 both carry the
-  # reasoning_effort: "none" suppression - concurrent1's is what reproduces
-  # the committed 0.8636 arm.
+  # one backend exists by construction). Inside it, concurrent4's fragment is
+  # an explicit empty no-op because its engine bounds reasoning itself, and
+  # every other bounded arm carries reasoning_effort: "none" - concurrent1's
+  # is what reproduces the committed 0.8636 arm.
   def test_extra_body_for_studio_models_is_empty_outside_the_thinking_bounded_arms
     (EvalSweep::STUDIO_MODELS - THINKING_BOUNDED_ARMS).each do |model|
       assert_empty EvalSweep.extra_body_for(model)
     end
 
     assert_equal({}, EvalSweep.extra_body_for("qwen3.8-27b-mxfp8-concurrent4"))
-    assert_equal({reasoning_effort: "none"}, EvalSweep.extra_body_for("qwen3.8-27b-mxfp8-concurrent1"))
-    assert_equal({reasoning_effort: "none"}, EvalSweep.extra_body_for("qwen3.8-flash-next-oq3"))
-    assert_equal({reasoning_effort: "none"}, EvalSweep.extra_body_for("qwen3.8-flash-next-reap288"))
-    assert_equal({reasoning_effort: "none"}, EvalSweep.extra_body_for("qwen3.8-flash-next-ream288"))
-    assert_equal({}, EvalSweep.extra_body_for("qwen3.6-35b-a3b-4bit"))
+
+    %w[qwen3.8-27b-mxfp8-concurrent1 qwen3.8-flash-next-oq3
+       qwen3.8-flash-next-reap288 qwen3.8-flash-next-ream288
+       qwen3.6-35b-a3b-4bit qwen3.6-35b-a3b-8bit
+       nemotron-3-super qwen3-122b-a10b].each do |arm|
+      assert_equal({reasoning_effort: "none"}, EvalSweep.extra_body_for(arm))
+    end
   end
 
   # AC3: load_env! must not demand any credential for a studio-only model

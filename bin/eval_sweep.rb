@@ -87,7 +87,8 @@ module EvalSweep
     "qwen3.6-35b-a3b-4bit", "qwen3.6-35b-a3b-8bit", "qwen3-27b-optiq",
     "qwen3-122b-a10b", "nemotron-3-super", "qwen3.8-27b-mxfp8-concurrent4",
     "qwen3.8-27b-mxfp8-concurrent1", "qwen3.8-flash-next-oq3",
-    "qwen3.8-flash-next-reap288", "qwen3.8-flash-next-ream288"
+    "qwen3.8-flash-next-reap288", "qwen3.8-flash-next-ream288",
+    "qwen3-coder-next"
   ].freeze
 
   # I29 R12 phase 1 Arm H: seven hosted consumer-class open-weight models
@@ -133,6 +134,7 @@ module EvalSweep
     "qwen3.8-flash-next-oq3" => :studio,
     "qwen3.8-flash-next-reap288" => :studio,
     "qwen3.8-flash-next-ream288" => :studio,
+    "qwen3-coder-next" => :studio,
     "qwen/qwen3.6-27b" => :openrouter,
     "qwen/qwen3.6-35b-a3b" => :openrouter,
     "google/gemma-4-26b-a4b-it" => :openrouter,
@@ -205,6 +207,7 @@ module EvalSweep
     "qwen3.8-flash-next-oq3" => {input_token_price: 0.0, output_token_price: 0.0},
     "qwen3.8-flash-next-reap288" => {input_token_price: 0.0, output_token_price: 0.0},
     "qwen3.8-flash-next-ream288" => {input_token_price: 0.0, output_token_price: 0.0},
+    "qwen3-coder-next" => {input_token_price: 0.0, output_token_price: 0.0},
     "qwen/qwen3.6-27b" => {input_token_price: 0.0000003, output_token_price: 0.0000032},
     "qwen/qwen3.6-35b-a3b" => {input_token_price: 0.0000002, output_token_price: 0.0000016},
     "google/gemma-4-26b-a4b-it" => {input_token_price: 0.00000012, output_token_price: 0.0000004},
@@ -361,8 +364,37 @@ module EvalSweep
     # Off rather than merely bounded, matching concurrent1 and
     # flash-next-oq3: all four arms then answer a hidden-grader task without
     # reasoning, which is the like-for-like comparison this sweep is for.
-    "qwen3.6-35b-a3b-4bit" => {},
-    "qwen3.6-35b-a3b-8bit" => {}
+    #
+    # Both a3b arms: reasoning_effort "none", changed from an empty no-op
+    # 2026-09-01. The no-op was correct only while their alias OMITTED
+    # enable_thinking - gateway e30cbac sets it, so the launch flag no longer
+    # keeps thinking off and an empty fragment would silently measure a
+    # thinking-enabled arm against 1,277 committed records bought with
+    # thinking off. Verified live through the gateway 2026-09-01 that a
+    # per-request "none" still overrides the launch flag
+    # (request_normalization.py _DISABLED_REASONING_EFFORTS): same prompt,
+    # 53 completion tokens and 0 reasoning characters with "none" against
+    # 1,905 and 6,548 without.
+    "qwen3.6-35b-a3b-4bit" => {reasoning_effort: "none"},
+    "qwen3.6-35b-a3b-8bit" => {reasoning_effort: "none"},
+    #
+    # nemotron-3-super and qwen3-122b-a10b: same story, same date. Both moved
+    # to mlx-vlm with enable_thinking set (gateway e544e16/e30cbac), and both
+    # already carry committed records (264 and 204) bought on the mlx engine
+    # with no thinking. They carry the suppression so a rerun reads against
+    # those records rather than silently becoming a different arm.
+    #
+    # A thinking-enabled read of either is a separate, deliberately unbought
+    # measurement - see the flash-next-oq3 note above for the arithmetic:
+    # ~10 min/call at a 16_384-token reasoning budget is ~22 hours per k=3
+    # sweep, and the 122B spends ~500 thinking tokens on "17 * 23".
+    "nemotron-3-super" => {reasoning_effort: "none"},
+    "qwen3-122b-a10b" => {reasoning_effort: "none"}
+    #
+    # qwen3-coder-next deliberately has NO entry: its chat template carries no
+    # <think>, </think> or enable_thinking marker at all, so there is no
+    # thinking channel to suppress and its alias sets no launch flag. An
+    # entry here would be a knob that does nothing.
   }.freeze
 
   # I26 (I25 F4): eval_sweep.rb never pinned OpenRouter routing, so every
