@@ -461,12 +461,37 @@ module EvalSweep
   # (Providers::Anthropic::DEFAULT_MAX_TOKENS,
   # Providers::OpenAICompat::DEFAULT_MAX_TOKENS) stay 4096, since a sweep-
   # wide budget belongs in the sweep's own config, not in a default every
-  # other caller inherits. Raised from 4096: I20 measured 20 of 54
-  # kimi-k2.7-code hidden records truncated at the 4096 cap with zero
-  # visible text - reasoning burn eating the whole budget before any answer
-  # appeared. 16_384 is the smallest power-of-two step (4x) that turns that
-  # observed burn into headroom.
-  SWEEP_MAX_TOKENS = 16_384
+  # other caller inherits.
+  #
+  # 16_384 -> 4096, 2026-09-01. I20 raised it TO 16_384 because 20 of 54
+  # kimi-k2.7-code records truncated at 4096 with zero visible text -
+  # reasoning burn eating the budget before any answer appeared. That was
+  # measured under schema 1, BEFORE the output contract. Schema 3's stated
+  # contract collapsed answer length by more than an order of magnitude:
+  # across every committed run, passing samples went from p90 3,651 tokens
+  # (schema 1) to p90 308 (schema 3), with a schema-3 median of 102.
+  #
+  # So the headroom I20 bought is now almost entirely runaway. Measured over
+  # all 1,043 committed schema-3 passing samples, 4096 sits ABOVE p99
+  # (3,447): it bites only answers that were already pathological.
+  #
+  # Cost, counted properly. A cap does NOT kill every sample above it - a
+  # length finish still grades if the fence closed earlier, and two committed
+  # samples passed at exactly 16_384 with stop_reason "length" for that
+  # reason. Checking where each passing answer's fence actually closes: of
+  # the samples exceeding 4096, seven had an unclosed fence at that point and
+  # would be lost; one would survive. Seven of 1,043 is 0.7%.
+  #
+  # 2048 was tempting and rejected. It costs only three more samples, but
+  # every sample a tighter cap kills belongs to a verbose, weaker arm
+  # (qwen3.5-9b, reap288, ream288, ministral-3-8b) and none to the terse
+  # leaders, whose p50 is 100-150 tokens. A cap that taxes exactly the models
+  # that deliberate reintroduces Prompt's own warning about the fence in a
+  # new form - "a floor rather than a scale".
+  #
+  # This is a real change to what is measured, not a free one: an arm carrying
+  # it is not strictly comparable to a committed run bought at 16_384.
+  SWEEP_MAX_TOKENS = 4096
 
   RESULTS_DIR = File.expand_path("../results", __dir__)
   LIVE_ENV_FILE = File.expand_path("../.env", __dir__)
