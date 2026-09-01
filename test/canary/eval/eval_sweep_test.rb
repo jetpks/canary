@@ -161,6 +161,8 @@ class EvalSweepTest < Minitest::Test
     qwen3.6-35b-a3b-8bit
     nemotron-3-super
     qwen3-122b-a10b
+    qwen3.5-9b
+    gemma-4-e4b
   ].freeze
 
   def test_only_the_thinking_bounded_studio_arms_carry_a_thinking_effort_entry
@@ -181,13 +183,17 @@ class EvalSweepTest < Minitest::Test
     # bought with thinking off; the fragment is what keeps a rerun readable
     # against them.
     %w[qwen3.6-35b-a3b-4bit qwen3.6-35b-a3b-8bit
-       nemotron-3-super qwen3-122b-a10b].each do |arm|
+       nemotron-3-super qwen3-122b-a10b
+       qwen3.5-9b gemma-4-e4b].each do |arm|
       assert_equal({reasoning_effort: "none"}, EvalSweep::THINKING_EFFORT.fetch(arm))
     end
 
-    # qwen3-coder-next is non-thinking by construction, so it stays outside
-    # THINKING_BOUNDED_ARMS and the refute above covers it.
-    refute EvalSweep::THINKING_EFFORT.key?("qwen3-coder-next")
+    # The non-thinking arms stay outside THINKING_BOUNDED_ARMS and the refute
+    # above covers them; named here so the split is legible rather than
+    # implied by absence.
+    %w[qwen3-coder-next ministral-3-8b olmo-3-7b granite-4.1-8b].each do |arm|
+      refute EvalSweep::THINKING_EFFORT.key?(arm)
+    end
   end
 
   # AC6: studio models get no PROVIDER_PINS entry - one backend exists by
@@ -219,7 +225,8 @@ class EvalSweepTest < Minitest::Test
     %w[qwen3.8-27b-mxfp8-concurrent1 qwen3.8-flash-next-oq3
        qwen3.8-flash-next-reap288 qwen3.8-flash-next-ream288
        qwen3.6-35b-a3b-4bit qwen3.6-35b-a3b-8bit
-       nemotron-3-super qwen3-122b-a10b].each do |arm|
+       nemotron-3-super qwen3-122b-a10b
+       qwen3.5-9b gemma-4-e4b].each do |arm|
       assert_equal({reasoning_effort: "none"}, EvalSweep.extra_body_for(arm))
     end
   end

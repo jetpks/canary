@@ -88,7 +88,9 @@ module EvalSweep
     "qwen3-122b-a10b", "nemotron-3-super", "qwen3.8-27b-mxfp8-concurrent4",
     "qwen3.8-27b-mxfp8-concurrent1", "qwen3.8-flash-next-oq3",
     "qwen3.8-flash-next-reap288", "qwen3.8-flash-next-ream288",
-    "qwen3-coder-next"
+    "qwen3-coder-next",
+    "qwen3.5-9b", "gemma-4-e4b", "ministral-3-8b", "olmo-3-7b",
+    "granite-4.1-8b"
   ].freeze
 
   # I29 R12 phase 1 Arm H: seven hosted consumer-class open-weight models
@@ -135,6 +137,11 @@ module EvalSweep
     "qwen3.8-flash-next-reap288" => :studio,
     "qwen3.8-flash-next-ream288" => :studio,
     "qwen3-coder-next" => :studio,
+    "qwen3.5-9b" => :studio,
+    "gemma-4-e4b" => :studio,
+    "ministral-3-8b" => :studio,
+    "olmo-3-7b" => :studio,
+    "granite-4.1-8b" => :studio,
     "qwen/qwen3.6-27b" => :openrouter,
     "qwen/qwen3.6-35b-a3b" => :openrouter,
     "google/gemma-4-26b-a4b-it" => :openrouter,
@@ -208,6 +215,11 @@ module EvalSweep
     "qwen3.8-flash-next-reap288" => {input_token_price: 0.0, output_token_price: 0.0},
     "qwen3.8-flash-next-ream288" => {input_token_price: 0.0, output_token_price: 0.0},
     "qwen3-coder-next" => {input_token_price: 0.0, output_token_price: 0.0},
+    "qwen3.5-9b" => {input_token_price: 0.0, output_token_price: 0.0},
+    "gemma-4-e4b" => {input_token_price: 0.0, output_token_price: 0.0},
+    "ministral-3-8b" => {input_token_price: 0.0, output_token_price: 0.0},
+    "olmo-3-7b" => {input_token_price: 0.0, output_token_price: 0.0},
+    "granite-4.1-8b" => {input_token_price: 0.0, output_token_price: 0.0},
     "qwen/qwen3.6-27b" => {input_token_price: 0.0000003, output_token_price: 0.0000032},
     "qwen/qwen3.6-35b-a3b" => {input_token_price: 0.0000002, output_token_price: 0.0000016},
     "google/gemma-4-26b-a4b-it" => {input_token_price: 0.00000012, output_token_price: 0.0000004},
@@ -389,7 +401,21 @@ module EvalSweep
     # ~10 min/call at a 16_384-token reasoning budget is ~22 hours per k=3
     # sweep, and the 122B spends ~500 thinking tokens on "17 * 23".
     "nemotron-3-super" => {reasoning_effort: "none"},
-    "qwen3-122b-a10b" => {reasoning_effort: "none"}
+    "qwen3-122b-a10b" => {reasoning_effort: "none"},
+    #
+    # The two thinking arms of the 2026-09-01 small band. Same suppression for
+    # the same reason: every studio arm on this corpus is measured with
+    # thinking off, so a band meant to be read against them has to match.
+    #
+    # gemma-4-e4b earns its entry the hard way - it is a thinking model with no
+    # <think> tag at all (its template opens '<|think|>'), so "has no <think>,
+    # therefore needs no suppression" would have been wrong here. Confirmed by
+    # probe: 658 reasoning characters with thinking on.
+    "qwen3.5-9b" => {reasoning_effort: "none"},
+    "gemma-4-e4b" => {reasoning_effort: "none"}
+    #
+    # ministral-3-8b, olmo-3-7b and granite-4.1-8b get no entry, same as
+    # qwen3-coder-next: non-thinking templates, nothing to suppress.
     #
     # qwen3-coder-next deliberately has NO entry: its chat template carries no
     # <think>, </think> or enable_thinking marker at all, so there is no
