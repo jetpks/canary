@@ -14,7 +14,7 @@ module Canary
     # Sampler#call itself stays a sequential Array.new(n), so the
     # concurrency across samples lives here, not there.
     class Runner
-      SCHEMA_VERSION = 2
+      SCHEMA_VERSION = 3
 
       # Deliberately low. Each concurrent job holds one in-flight provider
       # call against a rate-limited API, and every job whose response

@@ -64,13 +64,19 @@ module Canary
         @path = path
       end
 
-      def record(model:, mode:, task_name:, sample_index:, prompt:, payload:)
+      # +request+ is the body the provider actually sent (captured through
+      # its on_request hook), not a reconstruction: temperature, seed,
+      # max_tokens, the system prompt and any per-model extra_body are all
+      # visible in the evidence, so a run can be audited and reproduced from
+      # its own files. Before schema 3 this stored {prompt:} alone, which
+      # left every sampling parameter unrecoverable from disk.
+      def record(model:, mode:, task_name:, sample_index:, request:, payload:)
         entry = {
           model: model,
           mode: mode,
           task_name: task_name,
           sample_index: sample_index,
-          request: {prompt: prompt},
+          request: request,
           response: payload
         }
         File.open(@path, "a") { |f| f.puts(JSON.generate(entry)) }
@@ -115,7 +121,11 @@ module Canary
       end
 
       @budget.spend!
-      result = @provider.sample(model: model, prompt: rendered.text, sample_index: index)
+      sent = nil
+      result = @provider.sample(
+        model: model, prompt: rendered.text, system: rendered.system,
+        sample_index: index, on_request: ->(body) { sent = body }
+      )
       record_spend!(model, result)
 
       @record_sink.record(
@@ -123,7 +133,7 @@ module Canary
         mode: rendered.mode,
         task_name: task_name,
         sample_index: index,
-        prompt: rendered.text,
+        request: sent || {prompt: rendered.text, system: rendered.system},
         payload: payload_for(result)
       )
 

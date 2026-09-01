@@ -3,6 +3,7 @@
 require_relative "../lib/canary"
 require "fileutils"
 require "json"
+require "time"
 
 # Runs the sweep shape and commits the resulting Canary::Eval::Record set,
 # and the raw completions that produced them, under results/: every task in
@@ -552,6 +553,8 @@ module EvalSweep
 
     run_dir = new_run_dir
     FileUtils.mkdir_p(run_dir)
+    config = run_config(models: hidden_models + visible_models, tasks_count: tasks.size)
+    write_run_config(config, run_dir)
     records_path = File.join(run_dir, "sweep.jsonl")
     completions_path = File.join(run_dir, "completions.jsonl")
 
@@ -577,7 +580,7 @@ module EvalSweep
 
     records = hidden + visible
     report_spend(records)
-    write_summary(records, run_dir, cap_lines)
+    write_summary(records, run_dir, cap_lines, config)
     puts "wrote #{records.size} records to #{records_path}"
     puts "wrote completions to #{completions_path}"
     records_path
@@ -645,13 +648,67 @@ module EvalSweep
   # record from Canary::TaskRepo.all by task_name. A task_name absent from
   # the repo raises (Hash#fetch) rather than silently falling into either
   # bucket.
-  def self.write_summary(records, run_dir, cap_lines)
+  # What a run was drawn under, written beside its records so the evidence
+  # states its own parameters. Recovering these from the artifacts used to be
+  # impossible: concurrency was not stored anywhere at all (it had to be
+  # inferred from run-dir mtime against sum(sample_ms)), and completions.jsonl
+  # kept only {prompt}, so temperature, seed and the system prompt were
+  # unrecoverable. A run that cannot state its own sampling parameters cannot
+  # be reproduced or compared, and this corpus has now been bitten by that
+  # three separate times.
+  #
+  # The system prompt is stored in full rather than digested: it is the
+  # v2->v3 input change, and a reader comparing two runs needs to see what
+  # differed, not that something did.
+  def self.run_config(models:, tasks_count:)
+    {
+      schema_version: Canary::Eval::Runner::SCHEMA_VERSION,
+      generated_at: Time.now.utc.iso8601,
+      tasks: tasks_count,
+      hidden_k: HIDDEN_K,
+      visible_k: VISIBLE_K,
+      max_tokens: SWEEP_MAX_TOKENS,
+      temperature: Canary::Providers::OpenAICompat::DEFAULT_TEMPERATURE,
+      seed_derivation: "sha256(prompt + sample_index)[0,8]",
+      concurrency: models.to_h { |m| [m, runner_concurrency(MODEL_PROVIDERS.fetch(m))] },
+      providers: models.to_h { |m| [m, MODEL_PROVIDERS.fetch(m)] },
+      extra_body: models.to_h { |m| [m, extra_body_for(m)] },
+      system_prompt: Canary::Prompt::SYSTEM
+    }
+  end
+
+  def self.write_run_config(config, run_dir)
+    path = File.join(run_dir, "run_config.json")
+    File.write(path, JSON.pretty_generate(config))
+    puts "wrote run config to #{path}"
+    path
+  end
+
+  def self.run_config_lines(config)
+    lines = ["## run config", ""]
+    config.each do |key, value|
+      next if key == :system_prompt
+
+      lines << "- **#{key}**: `#{value.is_a?(Hash) ? JSON.generate(value) : value}`"
+    end
+    lines << ""
+    lines << "system prompt (schema 3+; v2 runs had none, so their rates are not poolable with these):"
+    lines << ""
+    lines << "```text"
+    lines.concat(config[:system_prompt].lines.map(&:chomp))
+    lines << "```"
+    lines << ""
+    lines
+  end
+
+  def self.write_summary(records, run_dir, cap_lines, config = nil)
     lines = ["# Canary eval sweep", ""]
     lines << format("actual spend (from recorded token usage x price table): $%.4f", total_spend(records))
     lines << ""
     lines << "spend guard cap derivation:"
     lines.concat(cap_lines)
     lines << ""
+    lines.concat(run_config_lines(config)) if config
     provenance_by_task = Canary::TaskRepo.all.to_h { |entry| [entry.name, entry.provenance] }
     records.group_by { |record| [record.model, record.render_mode] }.sort.each do |(model, mode), arm_records|
       lines.concat(arm_section(model, mode, arm_records, provenance_by_task))

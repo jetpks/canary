@@ -35,12 +35,19 @@ module Canary
       # has no seed parameter, and it already samples at temperature 1.0 by
       # default, so this arm never had the greedy-decode problem that made
       # the OpenAI-compatible one send temperature explicitly.
-      def sample(model:, prompt:, max_tokens: @max_tokens, sample_index: nil) # rubocop:disable Lint/UnusedMethodArgument
-        response = @client.messages.create(
+      # +system+ goes in the Messages API's top-level parameter, not in a
+      # message with role "system" - the OpenAI-compatible spelling would be
+      # rejected here. +on_request+ mirrors OpenAICompat: it receives the
+      # exact params sent, so completions.jsonl records the real request.
+      def sample(model:, prompt:, system: nil, max_tokens: @max_tokens, sample_index: nil, on_request: nil) # rubocop:disable Lint/UnusedMethodArgument
+        params = {
           model: model,
           max_tokens: max_tokens,
           messages: [{role: "user", content: prompt}]
-        )
+        }
+        params[:system] = system if system
+        on_request&.call(params)
+        response = @client.messages.create(**params)
 
         return content_failure(:refusal, "provider refused: stop_reason=refusal", response) if response.stop_reason == :refusal
         return content_failure(:truncated, "response truncated: stop_reason=max_tokens, max_tokens=#{max_tokens}", response) if response.stop_reason == :max_tokens

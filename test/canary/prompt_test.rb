@@ -68,6 +68,28 @@ class PromptTest < Minitest::Test
     end
   end
 
+  # The output contract must actually reach the model. Extractor rejects an
+  # unfenced answer, so a harness that never asks for a fence is scoring
+  # convention-guessing rather than Ruby.
+  def test_both_render_modes_carry_the_output_contract
+    entry = build_entry
+
+    [Canary::Prompt.render(entry), Canary::Prompt.render(entry, grader: true)].each do |rendered|
+      assert_equal Canary::Prompt::SYSTEM, rendered.system
+      assert_includes rendered.system, "fenced Ruby code block"
+      assert_includes rendered.system, "Do not emit"
+    end
+  end
+
+  # Shared across modes on purpose: the output contract is the same
+  # experiment either way, and only task framing differs.
+  def test_the_system_prompt_is_identical_across_modes
+    entry = build_entry
+
+    assert_equal Canary::Prompt.render(entry).system,
+                 Canary::Prompt.render(entry, grader: true).system
+  end
+
   private
 
   def build_entry

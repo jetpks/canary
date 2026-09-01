@@ -18,6 +18,14 @@ module Canary
     # every version-1 run on disk was drawn either greedily or with a seed
     # that correlated the samples across tasks.
     #
+    # Version 3 states the output contract to the model (Canary::Prompt::SYSTEM)
+    # instead of assuming it. Every v1/v2 hidden-arm number was partly a
+    # measure of whether a model guessed that an unfenced answer would be
+    # thrown away, so v2 and v3 rates are NOT poolable - the input changed.
+    # v3 runs also record the provider's real request body in
+    # completions.jsonl and a run_config.json beside it, so a run's own
+    # evidence states the sampling parameters it was drawn under.
+    #
     # +sample_ms+ is wall time for the whole attempt at one sample - render,
     # provider round trip, and the queueing behind it - measured in the
     # runner rather than the provider, because what a time-vs-accuracy

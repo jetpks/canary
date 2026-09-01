@@ -13,7 +13,34 @@ module Canary
   # is diagnostic only, for measuring per-task grader strength later - never
   # the default, and it is the only mode that reads the grader file.
   class Prompt
-    Result = Data.define(:text, :mode)
+    Result = Data.define(:text, :system, :mode)
+
+    # The output contract, stated to the model instead of assumed of it.
+    #
+    # Extractor requires a fenced Ruby block (:no_fenced_code /
+    # :no_ruby_fence) but nothing ever asked for one, so part of what a
+    # hidden-arm score measured was whether a model happened to guess this
+    # harness's convention. That is not Ruby tail-generalization, and it is
+    # biased against exactly the weaker models the corpus exists to
+    # discriminate among: a model that cannot clear the format lottery
+    # cannot be measured at all, which gives the instrument a floor rather
+    # than a scale. Measured 2026-08-31: one Flash-Next derivative answered
+    # a bare task statement with <tool_call><function=list_files> on 27 of
+    # 30 samples, scoring 0 usable data points on tasks it can actually do.
+    #
+    # The no-tools sentence is load-bearing, not decoration - that drift is
+    # what it addresses. Shared across both render modes on purpose: the
+    # output contract is the same experiment either way, and only the
+    # task-framing content differs, which is what the preambles carry.
+    SYSTEM = <<~TEXT.freeze
+      You are completing a self-contained Ruby coding task.
+
+      Reply with exactly one fenced Ruby code block containing the complete
+      implementation, and nothing else - no prose before or after it.
+
+      You have no tools, no filesystem access, and no shell. Do not emit
+      tool calls; write the code directly.
+    TEXT
 
     HIDDEN_PREAMBLE = <<~TEXT.freeze
       You are given a Ruby task. Implement it so the task's test suite passes.
@@ -29,10 +56,18 @@ module Canary
     TEXT
 
     def self.render(entry, grader: false)
-      return Result.new(text: grader_visible_text(entry.statement, File.read(entry.reference.test_path)), mode: :grader_visible) if grader
+      return hidden(entry.statement) unless grader
 
-      Result.new(text: hidden_text(entry.statement), mode: :hidden)
+      Result.new(
+        text: grader_visible_text(entry.statement, File.read(entry.reference.test_path)),
+        system: SYSTEM, mode: :grader_visible
+      )
     end
+
+    def self.hidden(statement)
+      Result.new(text: hidden_text(statement), system: SYSTEM, mode: :hidden)
+    end
+    private_class_method :hidden
 
     def self.hidden_text(statement)
       "#{HIDDEN_PREAMBLE}#{statement}\n"

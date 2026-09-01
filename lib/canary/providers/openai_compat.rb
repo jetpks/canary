@@ -94,12 +94,27 @@ module Canary
       # extra_body_by_model merges last and so overrides both: a model whose
       # card asks for its own sampling (Flash-Next wants top_k 20 / top_p
       # 0.95) states that per-model rather than by moving this default.
-      def sample(model:, prompt:, max_tokens: @max_tokens, sample_index: 0)
+      # +on_request+, when given, receives the exact body hash that is about
+      # to go on the wire. RecordSink uses it so completions.jsonl carries
+      # what was actually sent rather than a second reconstruction of it -
+      # a reconstruction drifts from the real request the moment either side
+      # changes, and a run whose evidence cannot state its own temperature,
+      # seed or system prompt cannot be audited or reproduced.
+      #
+      # The seed still digests the user prompt only. +system+ is constant
+      # across every request in a sweep, so folding it in would shift every
+      # seed without decorrelating anything, and would silently break
+      # re-runs of older sweeps.
+      def sample(model:, prompt:, system: nil, max_tokens: @max_tokens, sample_index: 0, on_request: nil)
+        messages = []
+        messages << {role: "system", content: system} if system
+        messages << {role: "user", content: prompt}
         body_hash = {
           model: model, max_tokens: max_tokens, temperature: @temperature,
           seed: self.class.seed_for(prompt, sample_index),
-          messages: [{role: "user", content: prompt}]
+          messages: messages
         }.merge(@extra_body_by_model.fetch(model, {}))
+        on_request&.call(body_hash)
         body = JSON.generate(body_hash)
         headers = {"Authorization" => "Bearer #{@api_key}", "Content-Type" => "application/json"}
         response = @transport.call(uri: @uri, headers: headers, body: body)

@@ -32,7 +32,7 @@ class RunnerTest < Minitest::Test
     assert_equal 2, records.size
     assert_equal [0, 1], records.map(&:sample_index).sort
     records.each do |record|
-      assert_equal 2, record.schema_version
+      assert_equal Canary::Eval::Runner::SCHEMA_VERSION, record.schema_version
       assert_equal "eval_fixture_task", record.task_name
       assert_equal "fixture-model", record.model
       assert_equal :hidden, record.render_mode

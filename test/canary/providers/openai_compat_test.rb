@@ -391,7 +391,70 @@ class OpenAICompatTest < Minitest::Test
     refute_empty result.success.text
   end
 
+  def test_system_is_sent_as_a_system_role_message_ahead_of_the_user_turn
+    sent = nil
+    provider = Canary::Providers::OpenAICompat.new(
+      base_url: "http://x", api_key: "k",
+      transport: lambda { |uri:, headers:, body:|
+        sent = JSON.parse(body, symbolize_names: true)
+        stub_ok
+      }
+    )
+
+    provider.sample(model: "m", prompt: "p", system: "S")
+
+    assert_equal [{role: "system", content: "S"}, {role: "user", content: "p"}], sent[:messages]
+  end
+
+  def test_no_system_message_when_none_is_given
+    sent = nil
+    provider = Canary::Providers::OpenAICompat.new(
+      base_url: "http://x", api_key: "k",
+      transport: lambda { |uri:, headers:, body:|
+        sent = JSON.parse(body, symbolize_names: true)
+        stub_ok
+      }
+    )
+
+    provider.sample(model: "m", prompt: "p")
+
+    assert_equal [{role: "user", content: "p"}], sent[:messages]
+  end
+
+  # on_request must see the real body, not a reconstruction - that is what
+  # makes completions.jsonl auditable.
+  def test_on_request_receives_the_exact_body_that_is_sent
+    sent = nil
+    seen = nil
+    provider = Canary::Providers::OpenAICompat.new(
+      base_url: "http://x", api_key: "k",
+      transport: lambda { |uri:, headers:, body:|
+        sent = JSON.parse(body, symbolize_names: true)
+        stub_ok
+      }
+    )
+
+    provider.sample(model: "m", prompt: "p", system: "S", on_request: ->(b) { seen = b })
+
+    assert_equal sent, JSON.parse(JSON.generate(seen), symbolize_names: true)
+    assert seen.key?(:temperature) && seen.key?(:seed)
+  end
+
+  # system is constant across a sweep; folding it into the seed would shift
+  # every seed without decorrelating anything.
+  def test_system_does_not_change_the_seed
+    assert_equal Canary::Providers::OpenAICompat.seed_for("p", 0),
+                 Canary::Providers::OpenAICompat.seed_for("p", 0)
+  end
+
   private
+
+  def stub_ok
+    Struct.new(:code, :body).new("200", JSON.generate(
+      choices: [{message: {content: "```ruby\n1\n```"}, finish_reason: "stop"}],
+      usage: {prompt_tokens: 1, completion_tokens: 1}
+    ))
+  end
 
   def response_for(finish_reason:, content:, id: "chatcmpl-fixture", prompt_tokens: 10, completion_tokens: 20)
     {
