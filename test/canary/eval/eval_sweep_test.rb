@@ -163,6 +163,7 @@ class EvalSweepTest < Minitest::Test
     qwen3-122b-a10b
     qwen3.5-9b
     gemma-4-e4b
+    muse-glimmer-30b
   ].freeze
 
   def test_only_the_thinking_bounded_studio_arms_carry_a_thinking_effort_entry
@@ -184,7 +185,7 @@ class EvalSweepTest < Minitest::Test
     # against them.
     %w[qwen3.6-35b-a3b-4bit qwen3.6-35b-a3b-8bit
        nemotron-3-super qwen3-122b-a10b
-       qwen3.5-9b gemma-4-e4b].each do |arm|
+       qwen3.5-9b gemma-4-e4b muse-glimmer-30b].each do |arm|
       assert_equal({reasoning_effort: "none"}, EvalSweep::THINKING_EFFORT.fetch(arm))
     end
 
@@ -226,7 +227,7 @@ class EvalSweepTest < Minitest::Test
        qwen3.8-flash-next-reap288 qwen3.8-flash-next-ream288
        qwen3.6-35b-a3b-4bit qwen3.6-35b-a3b-8bit
        nemotron-3-super qwen3-122b-a10b
-       qwen3.5-9b gemma-4-e4b].each do |arm|
+       qwen3.5-9b gemma-4-e4b muse-glimmer-30b].each do |arm|
       assert_equal({reasoning_effort: "none"}, EvalSweep.extra_body_for(arm))
     end
   end

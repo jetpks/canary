@@ -90,7 +90,7 @@ module EvalSweep
     "qwen3.8-flash-next-reap288", "qwen3.8-flash-next-ream288",
     "qwen3-coder-next",
     "qwen3.5-9b", "gemma-4-e4b", "ministral-3-8b", "olmo-3-7b",
-    "granite-4.1-8b"
+    "granite-4.1-8b", "muse-glimmer-30b"
   ].freeze
 
   # I29 R12 phase 1 Arm H: seven hosted consumer-class open-weight models
@@ -142,6 +142,7 @@ module EvalSweep
     "ministral-3-8b" => :studio,
     "olmo-3-7b" => :studio,
     "granite-4.1-8b" => :studio,
+    "muse-glimmer-30b" => :studio,
     "qwen/qwen3.6-27b" => :openrouter,
     "qwen/qwen3.6-35b-a3b" => :openrouter,
     "google/gemma-4-26b-a4b-it" => :openrouter,
@@ -220,6 +221,7 @@ module EvalSweep
     "ministral-3-8b" => {input_token_price: 0.0, output_token_price: 0.0},
     "olmo-3-7b" => {input_token_price: 0.0, output_token_price: 0.0},
     "granite-4.1-8b" => {input_token_price: 0.0, output_token_price: 0.0},
+    "muse-glimmer-30b" => {input_token_price: 0.0, output_token_price: 0.0},
     "qwen/qwen3.6-27b" => {input_token_price: 0.0000003, output_token_price: 0.0000032},
     "qwen/qwen3.6-35b-a3b" => {input_token_price: 0.0000002, output_token_price: 0.0000016},
     "google/gemma-4-26b-a4b-it" => {input_token_price: 0.00000012, output_token_price: 0.0000004},
@@ -412,7 +414,22 @@ module EvalSweep
     # therefore needs no suppression" would have been wrong here. Confirmed by
     # probe: 658 reasoning characters with thinking on.
     "qwen3.5-9b" => {reasoning_effort: "none"},
-    "gemma-4-e4b" => {reasoning_effort: "none"}
+    "gemma-4-e4b" => {reasoning_effort: "none"},
+    #
+    # muse-glimmer-30b carries the suppression for consistency with the band,
+    # but with a caveat the other entries do not need: on this model "none"
+    # is a SUGGESTION, not a switch. Its template has no enable_thinking -
+    # render_reasoning() emits the literal "Reasoning strength: {rs}." into
+    # the system prompt - so the value is prose the model weighs rather than
+    # a structural gate that closes a thinking block.
+    #
+    # Measured through the engine on one prompt: high 1777 reasoning chars /
+    # 482 completion tokens, low 585 / 189, none 348 / 129. It modulates
+    # monotonically and never reaches zero. So this arm is NOT strictly
+    # comparable to a Qwen "none" arm, which emits no reasoning at all - it
+    # is the closest available approximation, and the residual ~350
+    # characters are part of what the arm measures.
+    "muse-glimmer-30b" => {reasoning_effort: "none"}
     #
     # ministral-3-8b, olmo-3-7b and granite-4.1-8b get no entry, same as
     # qwen3-coder-next: non-thinking templates, nothing to suppress.
