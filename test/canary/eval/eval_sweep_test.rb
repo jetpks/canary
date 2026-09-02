@@ -175,6 +175,7 @@ class EvalSweepTest < Minitest::Test
     qwen3.8-27b-mxfp4
     muse-glimmer-30b-8bit
     muse-glimmer-30b-4bit
+    nemotron-3-super-low
   ].freeze
 
   # The invariant that would have caught 2026-09-01's silent no-op. The checks
@@ -197,6 +198,15 @@ class EvalSweepTest < Minitest::Test
     EvalSweep::STUDIO_MODELS.each do |model|
       assert EvalSweep::PRICE_TABLE.key?(model), "#{model} has no PRICE_TABLE entry"
     end
+  end
+
+  # The reasoning control. Every other studio arm suppresses thinking; this one
+  # deliberately does not, so the band has something to read Muse Glimmer
+  # against. Asserted explicitly because a well-meaning sweep of the suppressed
+  # set would otherwise "fix" it and silently destroy the only control.
+  def test_the_reasoning_control_arm_carries_low_not_none
+    assert_equal({reasoning_effort: "low"}, EvalSweep::THINKING_EFFORT.fetch("nemotron-3-super-low"))
+    assert_equal({reasoning_effort: "none"}, EvalSweep::THINKING_EFFORT.fetch("nemotron-3-super"))
   end
 
   def test_only_the_thinking_bounded_studio_arms_carry_a_thinking_effort_entry
