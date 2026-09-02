@@ -90,7 +90,10 @@ module EvalSweep
     "qwen3.8-flash-next-reap288", "qwen3.8-flash-next-ream288",
     "qwen3-coder-next",
     "qwen3.5-9b", "gemma-4-e4b", "ministral-3-8b", "olmo-3-7b",
-    "granite-4.1-8b", "muse-glimmer-30b"
+    "granite-4.1-8b", "muse-glimmer-30b",
+    "devstral-small-2-24b", "gemma-4-26b-a4b", "gemma-4-31b",
+    "nemotron-3-nano-30b-a3b", "nemotron-3.5-lightning-30b-a3b",
+    "diffusiongemma-26b-a4b", "kimi-dev-72b"
   ].freeze
 
   # I29 R12 phase 1 Arm H: seven hosted consumer-class open-weight models
@@ -143,6 +146,13 @@ module EvalSweep
     "olmo-3-7b" => :studio,
     "granite-4.1-8b" => :studio,
     "muse-glimmer-30b" => :studio,
+    "devstral-small-2-24b" => :studio,
+    "gemma-4-26b-a4b" => :studio,
+    "gemma-4-31b" => :studio,
+    "nemotron-3-nano-30b-a3b" => :studio,
+    "nemotron-3.5-lightning-30b-a3b" => :studio,
+    "diffusiongemma-26b-a4b" => :studio,
+    "kimi-dev-72b" => :studio,
     "qwen/qwen3.6-27b" => :openrouter,
     "qwen/qwen3.6-35b-a3b" => :openrouter,
     "google/gemma-4-26b-a4b-it" => :openrouter,
@@ -222,6 +232,13 @@ module EvalSweep
     "olmo-3-7b" => {input_token_price: 0.0, output_token_price: 0.0},
     "granite-4.1-8b" => {input_token_price: 0.0, output_token_price: 0.0},
     "muse-glimmer-30b" => {input_token_price: 0.0, output_token_price: 0.0},
+    "devstral-small-2-24b" => {input_token_price: 0.0, output_token_price: 0.0},
+    "gemma-4-26b-a4b" => {input_token_price: 0.0, output_token_price: 0.0},
+    "gemma-4-31b" => {input_token_price: 0.0, output_token_price: 0.0},
+    "nemotron-3-nano-30b-a3b" => {input_token_price: 0.0, output_token_price: 0.0},
+    "nemotron-3.5-lightning-30b-a3b" => {input_token_price: 0.0, output_token_price: 0.0},
+    "diffusiongemma-26b-a4b" => {input_token_price: 0.0, output_token_price: 0.0},
+    "kimi-dev-72b" => {input_token_price: 0.0, output_token_price: 0.0},
     "qwen/qwen3.6-27b" => {input_token_price: 0.0000003, output_token_price: 0.0000032},
     "qwen/qwen3.6-35b-a3b" => {input_token_price: 0.0000002, output_token_price: 0.0000016},
     "google/gemma-4-26b-a4b-it" => {input_token_price: 0.00000012, output_token_price: 0.0000004},
@@ -429,7 +446,21 @@ module EvalSweep
     # comparable to a Qwen "none" arm, which emits no reasoning at all - it
     # is the closest available approximation, and the residual ~350
     # characters are part of what the arm measures.
-    "muse-glimmer-30b" => {reasoning_effort: "none"}
+    "muse-glimmer-30b" => {reasoning_effort: "none"},
+    #
+    # The 2026-09-01 second band's thinking arms, same suppression as the rest
+    # of the studio set. kimi-dev-72b needs it most: its reasoning is
+    # INTRINSIC - it emits ◁think▷ … ◁/think▷ with no flag asked for - and
+    # unsuppressed it spent 1,637 tokens deliberating on "reverse a string".
+    "gemma-4-26b-a4b" => {reasoning_effort: "none"},
+    "gemma-4-31b" => {reasoning_effort: "none"},
+    "nemotron-3-nano-30b-a3b" => {reasoning_effort: "none"},
+    "nemotron-3.5-lightning-30b-a3b" => {reasoning_effort: "none"},
+    "diffusiongemma-26b-a4b" => {reasoning_effort: "none"},
+    "kimi-dev-72b" => {reasoning_effort: "none"}
+    #
+    # devstral-small-2-24b gets no entry: non-thinking template, nothing to
+    # suppress. Probed at 33 completion tokens for a correct answer.
     #
     # ministral-3-8b, olmo-3-7b and granite-4.1-8b get no entry, same as
     # qwen3-coder-next: non-thinking templates, nothing to suppress.
