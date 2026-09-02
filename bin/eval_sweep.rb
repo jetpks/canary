@@ -154,6 +154,8 @@ module EvalSweep
     "diffusiongemma-26b-a4b" => :studio,
     "kimi-dev-72b" => :studio,
     "muse-glimmer-30b-mxfp4" => :studio,
+    "qwen3.8-27b-mxfp8-plain" => :studio,
+    "qwen3.8-27b-mxfp4" => :studio,
     "qwen/qwen3.6-27b" => :openrouter,
     "qwen/qwen3.6-35b-a3b" => :openrouter,
     "google/gemma-4-26b-a4b-it" => :openrouter,
@@ -241,6 +243,8 @@ module EvalSweep
     "diffusiongemma-26b-a4b" => {input_token_price: 0.0, output_token_price: 0.0},
     "kimi-dev-72b" => {input_token_price: 0.0, output_token_price: 0.0},
     "muse-glimmer-30b-mxfp4" => {input_token_price: 0.0, output_token_price: 0.0},
+    "qwen3.8-27b-mxfp8-plain" => {input_token_price: 0.0, output_token_price: 0.0},
+    "qwen3.8-27b-mxfp4" => {input_token_price: 0.0, output_token_price: 0.0},
     "qwen/qwen3.6-27b" => {input_token_price: 0.0000003, output_token_price: 0.0000032},
     "qwen/qwen3.6-35b-a3b" => {input_token_price: 0.0000002, output_token_price: 0.0000016},
     "google/gemma-4-26b-a4b-it" => {input_token_price: 0.00000012, output_token_price: 0.0000004},
@@ -466,7 +470,18 @@ module EvalSweep
     # in what is sent would confound quantization with request shape - and on
     # this model "none" is a suggestion it partly ignores, so the residual
     # reasoning has to be equally residual on both sides.
-    "muse-glimmer-30b-mxfp4" => {reasoning_effort: "none"}
+    "muse-glimmer-30b-mxfp4" => {reasoning_effort: "none"},
+    #
+    # The Qwen3.8-27B quant pair. Both carry "none" for the same reason
+    # concurrent1 does - this template opens an unclosed <think> and defaults
+    # to a high effort - and identically to each other, since a pair bought to
+    # isolate quantization must not differ in what is sent.
+    #
+    # Note these are NOT comparable to the committed concurrent1 arm despite
+    # sharing its weights and its fragment: concurrent1 runs with an MTP
+    # drafter and APC attached. That is the whole reason the plain twin exists.
+    "qwen3.8-27b-mxfp8-plain" => {reasoning_effort: "none"},
+    "qwen3.8-27b-mxfp4" => {reasoning_effort: "none"}
     #
     # devstral-small-2-24b gets no entry: non-thinking template, nothing to
     # suppress. Probed at 33 completion tokens for a correct answer.
