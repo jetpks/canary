@@ -93,7 +93,7 @@ module EvalSweep
     "granite-4.1-8b", "muse-glimmer-30b",
     "devstral-small-2-24b", "gemma-4-26b-a4b", "gemma-4-31b",
     "nemotron-3-nano-30b-a3b", "nemotron-3.5-lightning-30b-a3b",
-    "diffusiongemma-26b-a4b", "kimi-dev-72b"
+    "diffusiongemma-26b-a4b", "kimi-dev-72b", "muse-glimmer-30b-mxfp4"
   ].freeze
 
   # I29 R12 phase 1 Arm H: seven hosted consumer-class open-weight models
@@ -153,6 +153,7 @@ module EvalSweep
     "nemotron-3.5-lightning-30b-a3b" => :studio,
     "diffusiongemma-26b-a4b" => :studio,
     "kimi-dev-72b" => :studio,
+    "muse-glimmer-30b-mxfp4" => :studio,
     "qwen/qwen3.6-27b" => :openrouter,
     "qwen/qwen3.6-35b-a3b" => :openrouter,
     "google/gemma-4-26b-a4b-it" => :openrouter,
@@ -239,6 +240,7 @@ module EvalSweep
     "nemotron-3.5-lightning-30b-a3b" => {input_token_price: 0.0, output_token_price: 0.0},
     "diffusiongemma-26b-a4b" => {input_token_price: 0.0, output_token_price: 0.0},
     "kimi-dev-72b" => {input_token_price: 0.0, output_token_price: 0.0},
+    "muse-glimmer-30b-mxfp4" => {input_token_price: 0.0, output_token_price: 0.0},
     "qwen/qwen3.6-27b" => {input_token_price: 0.0000003, output_token_price: 0.0000032},
     "qwen/qwen3.6-35b-a3b" => {input_token_price: 0.0000002, output_token_price: 0.0000016},
     "google/gemma-4-26b-a4b-it" => {input_token_price: 0.00000012, output_token_price: 0.0000004},
@@ -457,7 +459,14 @@ module EvalSweep
     "nemotron-3-nano-30b-a3b" => {reasoning_effort: "none"},
     "nemotron-3.5-lightning-30b-a3b" => {reasoning_effort: "none"},
     "diffusiongemma-26b-a4b" => {reasoning_effort: "none"},
-    "kimi-dev-72b" => {reasoning_effort: "none"}
+    "kimi-dev-72b" => {reasoning_effort: "none"},
+    #
+    # The mxfp4 Muse Glimmer must carry the IDENTICAL fragment to its mxfp8
+    # sibling. The pair exists to measure what 4 bits costs, so any difference
+    # in what is sent would confound quantization with request shape - and on
+    # this model "none" is a suggestion it partly ignores, so the residual
+    # reasoning has to be equally residual on both sides.
+    "muse-glimmer-30b-mxfp4" => {reasoning_effort: "none"}
     #
     # devstral-small-2-24b gets no entry: non-thinking template, nothing to
     # suppress. Probed at 33 completion tokens for a correct answer.

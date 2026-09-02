@@ -170,6 +170,7 @@ class EvalSweepTest < Minitest::Test
     nemotron-3.5-lightning-30b-a3b
     diffusiongemma-26b-a4b
     kimi-dev-72b
+    muse-glimmer-30b-mxfp4
   ].freeze
 
   def test_only_the_thinking_bounded_studio_arms_carry_a_thinking_effort_entry
@@ -194,7 +195,7 @@ class EvalSweepTest < Minitest::Test
        qwen3.5-9b gemma-4-e4b muse-glimmer-30b
        gemma-4-26b-a4b gemma-4-31b nemotron-3-nano-30b-a3b
        nemotron-3.5-lightning-30b-a3b diffusiongemma-26b-a4b
-       kimi-dev-72b].each do |arm|
+       kimi-dev-72b muse-glimmer-30b-mxfp4].each do |arm|
       assert_equal({reasoning_effort: "none"}, EvalSweep::THINKING_EFFORT.fetch(arm))
     end
 
@@ -240,7 +241,7 @@ class EvalSweepTest < Minitest::Test
        qwen3.5-9b gemma-4-e4b muse-glimmer-30b
        gemma-4-26b-a4b gemma-4-31b nemotron-3-nano-30b-a3b
        nemotron-3.5-lightning-30b-a3b diffusiongemma-26b-a4b
-       kimi-dev-72b].each do |arm|
+       kimi-dev-72b muse-glimmer-30b-mxfp4].each do |arm|
       assert_equal({reasoning_effort: "none"}, EvalSweep.extra_body_for(arm))
     end
   end
