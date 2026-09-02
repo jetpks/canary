@@ -93,7 +93,9 @@ module EvalSweep
     "granite-4.1-8b", "muse-glimmer-30b",
     "devstral-small-2-24b", "gemma-4-26b-a4b", "gemma-4-31b",
     "nemotron-3-nano-30b-a3b", "nemotron-3.5-lightning-30b-a3b",
-    "diffusiongemma-26b-a4b", "kimi-dev-72b", "muse-glimmer-30b-mxfp4"
+    "diffusiongemma-26b-a4b", "kimi-dev-72b", "muse-glimmer-30b-mxfp4",
+    "qwen3.8-27b-mxfp8-plain", "qwen3.8-27b-mxfp4",
+    "muse-glimmer-30b-8bit", "muse-glimmer-30b-4bit"
   ].freeze
 
   # I29 R12 phase 1 Arm H: seven hosted consumer-class open-weight models

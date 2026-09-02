@@ -177,6 +177,28 @@ class EvalSweepTest < Minitest::Test
     muse-glimmer-30b-4bit
   ].freeze
 
+  # The invariant that would have caught 2026-09-01's silent no-op. The checks
+  # above walk STUDIO_MODELS -> MODEL_PROVIDERS, so an arm added to
+  # MODEL_PROVIDERS but MISSING from STUDIO_MODELS passes them vacuously - and
+  # then select_models intersects to nothing, eval_sweep prints "budget cap: 0
+  # samples" with an empty arm name, exits 0, and writes a run directory with
+  # zero records. Four arms were registered that way and two runs were spent
+  # before anyone noticed. This walks the other direction.
+  def test_every_studio_provider_entry_is_also_a_studio_model
+    declared = EvalSweep::MODEL_PROVIDERS.select { |_, kind| kind == :studio }.keys
+
+    assert_equal declared.sort, EvalSweep::STUDIO_MODELS.sort,
+      "MODEL_PROVIDERS and STUDIO_MODELS disagree; an arm in one but not the other sweeps zero samples"
+  end
+
+  # Same class of gap: a studio arm with no price entry raises at record_cost,
+  # but only once a record lands - long after the run has been paid for.
+  def test_every_studio_model_has_a_price_entry
+    EvalSweep::STUDIO_MODELS.each do |model|
+      assert EvalSweep::PRICE_TABLE.key?(model), "#{model} has no PRICE_TABLE entry"
+    end
+  end
+
   def test_only_the_thinking_bounded_studio_arms_carry_a_thinking_effort_entry
     (EvalSweep::STUDIO_MODELS - THINKING_BOUNDED_ARMS).each do |model|
       refute EvalSweep::THINKING_EFFORT.key?(model), "#{model} unexpectedly has a THINKING_EFFORT entry"
