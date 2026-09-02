@@ -156,6 +156,8 @@ module EvalSweep
     "muse-glimmer-30b-mxfp4" => :studio,
     "qwen3.8-27b-mxfp8-plain" => :studio,
     "qwen3.8-27b-mxfp4" => :studio,
+    "muse-glimmer-30b-8bit" => :studio,
+    "muse-glimmer-30b-4bit" => :studio,
     "qwen/qwen3.6-27b" => :openrouter,
     "qwen/qwen3.6-35b-a3b" => :openrouter,
     "google/gemma-4-26b-a4b-it" => :openrouter,
@@ -245,6 +247,8 @@ module EvalSweep
     "muse-glimmer-30b-mxfp4" => {input_token_price: 0.0, output_token_price: 0.0},
     "qwen3.8-27b-mxfp8-plain" => {input_token_price: 0.0, output_token_price: 0.0},
     "qwen3.8-27b-mxfp4" => {input_token_price: 0.0, output_token_price: 0.0},
+    "muse-glimmer-30b-8bit" => {input_token_price: 0.0, output_token_price: 0.0},
+    "muse-glimmer-30b-4bit" => {input_token_price: 0.0, output_token_price: 0.0},
     "qwen/qwen3.6-27b" => {input_token_price: 0.0000003, output_token_price: 0.0000032},
     "qwen/qwen3.6-35b-a3b" => {input_token_price: 0.0000002, output_token_price: 0.0000016},
     "google/gemma-4-26b-a4b-it" => {input_token_price: 0.00000012, output_token_price: 0.0000004},
@@ -481,7 +485,15 @@ module EvalSweep
     # sharing its weights and its fragment: concurrent1 runs with an MTP
     # drafter and APC attached. That is the whole reason the plain twin exists.
     "qwen3.8-27b-mxfp8-plain" => {reasoning_effort: "none"},
-    "qwen3.8-27b-mxfp4" => {reasoning_effort: "none"}
+    "qwen3.8-27b-mxfp4" => {reasoning_effort: "none"},
+    #
+    # The affine half of the Muse Glimmer square. All four quants of this model
+    # carry the IDENTICAL fragment - the square measures quantization, so the
+    # request must not vary across it. Note "none" is only partly honoured by
+    # this template (measured: high 1777 reasoning chars, low 585, none 348),
+    # which is fine here precisely because it is equally partial on all four.
+    "muse-glimmer-30b-8bit" => {reasoning_effort: "none"},
+    "muse-glimmer-30b-4bit" => {reasoning_effort: "none"}
     #
     # devstral-small-2-24b gets no entry: non-thinking template, nothing to
     # suppress. Probed at 33 completion tokens for a correct answer.
