@@ -596,7 +596,10 @@ module EvalSweep
   #
   # This is a real change to what is measured, not a free one: an arm carrying
   # it is not strictly comparable to a committed run bought at 16_384.
-  SWEEP_MAX_TOKENS = 4096
+  # SWEEP_MAX_TOKENS in the environment overrides the default for one run -
+  # a re-buy at the old cap, say - and run_config.json records whichever
+  # value applied, so the run stays self-describing.
+  SWEEP_MAX_TOKENS = Integer(ENV.fetch("SWEEP_MAX_TOKENS", 4096))
 
   RESULTS_DIR = File.expand_path("../results", __dir__)
   LIVE_ENV_FILE = File.expand_path("../.env", __dir__)
