@@ -1,4 +1,4 @@
-# canary
+# 🐤 canary
 
 A Ruby coding evaluation harness, and the raw results of running it against
 about thirty locally-served open-weight models and ten hosted ones.
