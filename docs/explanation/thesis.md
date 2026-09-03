@@ -49,12 +49,15 @@ This is a thesis the project is built to probe, not a finding it has
 established. Nothing in this repository claims to have confirmed it:
 
 - `results/` holds committed raw sweep artifacts — real dispatches to real
-  models, real `Canary::Eval::Record` data — but no leaderboard and no
-  citable pass-rate claim is published anywhere in this repo. The artifacts
-  are data to look at, not a conclusion to cite.
+  models, real `Canary::Eval::Record` data. The Canary Register built from
+  them is a table of what one machine measured, with its intervals and its
+  caveats stated ([methodology](methodology.md)); it is not a benchmark
+  score, and nothing here should be cited as one.
 - The corpus itself is small (`Canary::TaskRepo.all.size` is the current
-  count) and hand-authored, not sampled from a larger distribution in any
-  statistically representative way. It is a probe, not a benchmark.
+  count) and hand-built — mostly authored from scratch, the rest adapted
+  from dated upstream sources and attested as such. It is not sampled from
+  a larger distribution in any statistically representative way. A probe,
+  not a benchmark.
 - The corpus's own contamination posture is openly qualified, not asserted
   clean — see [`../CONTAMINATION.md`](../CONTAMINATION.md) for exactly what
   can and can't be claimed about whether the models this project evaluates

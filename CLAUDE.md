@@ -1,6 +1,11 @@
 # canary
 
-Ruby: 4.0.6 via mise (see `mise.toml`).
+Ruby: 4.0.6 via mise (see `mise.toml`). If mise is not activated in the
+shell, prefix commands with `mise exec --`.
+
+Docs live under `docs/` (diátaxis layout, index in `docs/README.md`).
+`results/` is raw sweep data, never hand-edited; `bin/eval_sweep.rb` writes
+it and `bin/rescore.rb` adds sidecars.
 
 ## Build
 

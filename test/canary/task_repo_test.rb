@@ -317,8 +317,10 @@ class TaskRepoTest < Minitest::Test
   end
 
   # A single-task corpus in a scratch dir, isolated from tasks/**, for
-  # exercising TaskRepo's load-time provenance validation directly rather
-  # than through the real corpus (which carries no sourced task today).
+  # exercising TaskRepo's load-time provenance validation directly. The real
+  # corpus can't stand in for this: it carries sourced tasks now, but every
+  # one of them is valid, so nothing under tasks/** exercises the rejection
+  # path.
   def with_task_dir(provenance:, source_attestation: nil)
     Dir.mktmpdir do |root|
       dir = File.join(root, "probe_task")

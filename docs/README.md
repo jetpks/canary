@@ -1,42 +1,49 @@
 # canary docs
 
-Organized [diátaxis](https://diataxis.fr)-style: tutorial and how-to are
-task-oriented, reference and explanation are information-oriented. Start with
-the tutorial if you're new here.
+Organised [diátaxis](https://diataxis.fr)-style: tutorial and how-to are
+task-oriented, reference and explanation are information-oriented. If you
+arrived from the Canary Register, start with
+[methodology](explanation/methodology.md) and
+[the results layout](reference/results-layout.md).
 
 ## Tutorial
 
-- [Install, run the suite, run one rollout](tutorial.md) — the shortest path
-  from a clean checkout to watching `Canary::Verifier` actually grade a
-  submission, in-process, offline.
+- [Install, run the suite, grade one rollout](tutorial.md) — from a clean
+  checkout to watching `Canary::Verifier` grade a submission, offline.
 
 ## How-to
 
-- [Author a task](how-to/author-a-task.md) — the full per-file contract for
-  a new `tasks/<name>/` directory: `meta.yml`, `solution.rb`, `grader.rb`,
-  `broken/*.rb`, and the statement-writing rules the grader depends on.
-- [Run a sweep](how-to/run-a-sweep.md) — `bin/eval_sweep.rb`, the
-  `CANARY_LIVE` opt-in gate, and the offline test that proves its shape
-  without spending anything.
-- [Run the server](how-to/run-the-server.md) — boot `bin/canary-server` and
-  call `POST /v1/rollouts` over a real loopback socket.
+- [Run a sweep](how-to/run-a-sweep.md) — `bin/eval_sweep.rb`: the
+  `CANARY_LIVE` gate, the four model lists and four provider kinds, the
+  knobs that shape a run, and what one run writes.
+- [Rescore a run](how-to/rescore-a-run.md) — `bin/rescore.rb`: re-grade
+  committed runs against the current extractor without buying a sample.
+- [Author a task](how-to/author-a-task.md) — the per-file contract for a
+  new `tasks/<name>/` directory and the statement-writing rules.
+- [Run the server](how-to/run-the-server.md) — boot `bin/canary-server`
+  and call `POST /v1/rollouts`.
 
 ## Reference
 
-- [`meta.yml` keys](reference/meta-yml.md)
+- [Results layout](reference/results-layout.md) — what is in a
+  `results/run-*/` directory, the three record schemas and which runs
+  carry which, rescore sidecars, and `run_config.json`.
 - [Sweep record schema](reference/sweep-record-schema.md) — every
-  `Canary::Eval::Record` field, including the non-score reasons.
+  `Canary::Eval::Record` field and every non-score reason.
+- [`meta.yml` keys](reference/meta-yml.md)
 - [Wire protocol](reference/wire-protocol.md) — the `POST /v1/rollouts`
-  request/response shape.
-- [Public API map](reference/public-api.md) — every class `require "canary"`
-  loads, one line each.
+  request and response.
+- [Public API map](reference/public-api.md) — every constant
+  `require "canary"` loads, one line each.
 
 ## Explanation
 
-- [The thesis](explanation/thesis.md) — why Ruby, in more depth than the
-  README.
-- [Contamination](../docs/CONTAMINATION.md) — what this project can and
-  cannot claim about whether the models it evaluates have seen this corpus
-  before.
-- [Threat boundary](explanation/threat-boundary.md) — the tamper taxonomy
+- [Methodology](explanation/methodology.md) — how the register's pass
+  rates, intervals, throughput and memory figures are derived, what pools
+  with what, and what the instrument cannot see.
+- [The thesis](explanation/thesis.md) — why Ruby.
+- [Contamination](CONTAMINATION.md) — provenance, held-out posture, which
+  tasks have crossed a hosted endpoint, and the reasoning traces the
+  results carry.
+- [Threat boundary](explanation/threat-boundary.md) — the tamper vectors
   the sandbox does not defend against, and why.

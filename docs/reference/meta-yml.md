@@ -14,8 +14,14 @@ example and the statement-writing rules.
 | `source_attestation` | String | only if `provenance: sourced` | a training-data-cutoff attestation. Loading raises `ArgumentError` for a `sourced` task with a blank or missing one. Ignored (may be omitted) for `authored`. |
 | `broken` | Array of `{id:, misconception:}` | yes | one entry per file expected at `broken/<id>.rb`. `id` names the file (without `.rb`); `misconception` is free-text documentation of the mistake, never sent to a model. |
 
-Every task in the current corpus carries `provenance: authored`; no task
-currently sets `source_attestation`.
+The corpus carries both provenance values today. Every sourced task cites a
+merged `rails/rails` pull request in its `source_attestation`, and
+`test/canary/task_repo_test.rb`'s
+`test_the_corpus_partitions_cleanly_between_authored_and_sourced_provenance`
+holds the partition: authored tasks carry no attestation, sourced tasks
+carry a non-blank one naming its upstream. See
+[`../CONTAMINATION.md`](../CONTAMINATION.md) for what that buys and what it
+does not.
 
 Reflects into `Canary::TaskRepo::Entry` (`Entry.members`) as
 `:name, :category, :statement, :adapter, :reference, :broken_solutions,

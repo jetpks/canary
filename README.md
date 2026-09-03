@@ -1,167 +1,144 @@
 # canary
 
+A Ruby coding evaluation harness, and the raw results of running it against
+about thirty locally-served open-weight models and ten hosted ones.
+
 | | |
 |---|---|
-| **Status** | incubating |
-| **What** | A Ruby coding evaluation and RL environment |
-| **Ruby** | 4.0.6 (`mise.toml`) |
-| **License** | MIT (`LICENSE`) |
-| **Docs** | [`docs/`](docs/README.md) |
+| **What** | 44 hand-authored Ruby tasks, graded by executing each task's own test suite against the model's code in a forked child |
+| **Results** | the [Canary Register](https://claude.ai/code/artifact/3a79cd91-5e26-4668-89e1-512d41b70437), built from the raw records under [`results/`](results/README.md) |
+| **Ruby** | 4.0.6, pinned in `mise.toml` |
+| **License** | MIT |
+| **Docs** | [`docs/`](docs/README.md), organised as tutorial, how-to, reference, explanation |
 
-The corpus, the eval pipeline, and the wire protocol are all still in active
-flux. Nothing here is a finished product, and no result in this repo is
-published as a citable benchmark number.
+## What it measures
 
-## The hypothesis
+A task is a natural-language statement, a reference solution, a grading
+test file (Minitest or RSpec), and a set of deliberately broken solutions
+that each embody one named misconception. A model sees only the statement.
+Its answer is extracted, parsed, written to a scratch file, and run
+through the grader in a forked child process. It passes when the grader
+passes. Nothing is scored by pattern-matching the code or by asking
+another model.
 
-canary's working thesis is that **Ruby is a tail-generalization canary**: a
-model that is actually generalizing, rather than pattern-matching against
-memorized solutions, should keep producing working Ruby even in places where
-Python or JavaScript training data would let it coast on retrieval instead.
-Two properties make Ruby suited to measuring that gap:
+The working thesis is that **Ruby is a tail-generalization canary**: there
+is far less Ruby than Python in any training corpus, and Ruby lets
+semantically wrong code parse and run cleanly, so a model that is guessing
+rather than generalizing fails here silently and gets caught by the
+grader. That is a thesis the project probes, not a finding it claims. See
+[`docs/explanation/thesis.md`](docs/explanation/thesis.md).
 
-- **Corpus scarcity.** There is far less public Ruby than Python or
-  JavaScript for a model to have memorized against, so solving a Ruby task
-  is more likely to require genuine generalization than recall.
-- **Syntactic permissiveness.** Ruby tolerates a wide range of code that is
-  syntactically fine and semantically wrong: a subtly incorrect method still
-  parses, still runs, and often still returns something plausible-looking.
-  A model that is guessing rather than reasoning is more likely to fail
-  *silently* here — producing code that looks right and executes cleanly
-  but gets the semantics wrong — than in a language where the same mistake
-  would refuse to parse. That silence is a feature of the instrument, not a
-  defect in it: it's exactly the failure mode a shallow pattern-matcher
-  should produce, and a harness that only checked for a crash would miss it
-  entirely.
+## The results
 
-This is a thesis the project is built to probe, not a finding it has
-established. Nothing in this repo — no committed sweep, no leaderboard —
-claims to have confirmed it. See [`docs/explanation/thesis.md`](docs/explanation/thesis.md)
-for the longer version.
+Every sweep ever run is committed under `results/run-<timestamp>/`: one
+`Canary::Eval::Record` per sample, the exact request and response behind
+it, and the run's own configuration. The
+[Canary Register](https://claude.ai/code/artifact/3a79cd91-5e26-4668-89e1-512d41b70437)
+is a table built from the poolable subset of those runs: 29 local-model
+arms on one Mac Studio (M4 Max, 128 GB), each 44 tasks × 3 samples at
+temperature 1.0 under a stated output contract, reported as pass rate on
+all 132 samples with a 95% interval bootstrapped by task, plus decode
+throughput and resident memory measured beside the run.
 
-## What this is
+How each number is computed, what pools with what, and what the corpus
+cannot see is in
+[`docs/explanation/methodology.md`](docs/explanation/methodology.md). What
+the register does **not** claim: that canary is a benchmark, or that any
+number is citable outside that machine. Intervals at n=132 are roughly
+±10 points wide. The corpus resolves bands, not neighbours.
 
-canary is a harness for running model-generated Ruby solutions against
-small, hand-authored coding tasks and scoring them by actually executing
-their test suite — not by pattern-matching the code. Each task pairs a
-natural-language statement with a reference solution, a grading test file
-(minitest or rspec), and a set of deliberately broken solutions that each
-embody one named misconception.
-
-- **The task corpus** (`tasks/`) — hand-authored Ruby tasks, each with a
-  reference solution and broken solutions modeling specific misconceptions
-  (see "Task layout" below).
-- **`Canary::TaskRepo`** (`lib/canary/task_repo.rb`) — loads `tasks/**` into
-  `Canary::TaskRepo::Entry` values, each pairing a reference solution and its
-  broken solutions with a shared grader.
-- **`Canary::Pool`** (`lib/canary/pool.rb`) — forks a fresh child process per
-  rollout, loads the untrusted submission into it, runs it through the
-  task's grader, and reports back a structured `Canary::RolloutResult`
-  (pass/fail counts, coverage, and an outcome — `:ok`, `:error`, `:crash`,
-  `:timeout`, `:invalid`) without ever letting the submission run in the
-  parent process.
-- **`Canary::Prefilter`** (`lib/canary/prefilter.rb`) — inspects a
-  submission without executing it. A Prism parse (tier 0) is always on and
-  gates only on parse errors, never parse warnings. An opt-in RuboCop
-  Lint-department pass (tier 1, off by default — pass `lint: true` to enable
-  it) gates only findings at RuboCop's `:error`/`:fatal` severity; a
-  `:warning`-level finding stays visible in the report but never blocks a
-  rollout. What decides whether a finding gates is its severity, never which
-  tier or tool emitted it. It exists to reject what can be rejected for
-  free, before a rollout is paid for; it never scores or grades on its own.
-- **`Canary::Verifier`** (`lib/canary/verifier.rb`) — composes the prefilter
-  and the pool into one call per task: a submission the prefilter rejects
-  never reaches a rollout.
-- **`Canary::Prompt`** (`lib/canary/prompt.rb`) — turns a task's statement
-  into model-facing prompt text. Hidden mode (the default) shows only the
-  statement; grader-visible mode also shows the grading test file and is
-  meant for diagnostic use, not normal sampling.
-- **`Canary::Sampler`** (`lib/canary/sampler.rb`) — drives a provider
-  (`Canary::Providers::Anthropic` or `Canary::Providers::OpenAICompat`) for
-  `n` completions per task, recording every dispatched request/response as a
-  JSON line before returning. A request-count budget and an optional dollar
-  spend guard bound a run.
-- **`Canary::Extractor`** (`lib/canary/extractor.rb`) — pulls the Ruby out
-  of a model's fenced-markdown answer, and reports a distinct outcome when
-  there is nothing it can honestly extract, so "the model declined" stays
-  distinguishable from "the model wrote broken code."
-- **`Canary::Eval::Runner`** (`lib/canary/eval/runner.rb`) — the sweep
-  orchestrator: render → sample → extract → verify, once per (task, model,
-  sample) job, yielding one `Canary::Eval::Record` per job. A response the
-  provider cut short at its token limit is not automatically thrown away: if
-  the extracted code still parses cleanly, it is graded normally, with the
-  provider's `stop_reason` preserved on the record for audit. Only a
-  response that cuts off mid-construct — one the prefilter's own parser
-  can't finish parsing — is excluded from scoring, and even that is recorded
-  as an explicit non-score reason rather than silently dropped.
-- **`Canary::Server`** (`lib/canary/server.rb`) — a single-shot wire surface,
-  `POST /v1/rollouts` over HTTP/1.1, for scoring one submission per request
-  without a Ruby process in the caller.
-
-## Running the test suite
+## Quickstart
 
 ```console
 bundle install
 bundle exec rake test
 ```
 
-This runs every `test/**/*_test.rb` file under Minitest (see `Rakefile`). To
-run a single file:
+The suite runs offline, opens no socket, and reads no credential. Without
+mise activated in your shell, prefix commands with `mise exec --` so the
+pinned Ruby is the one that runs.
+
+Grade one submission in-process, no model involved:
 
 ```console
-bundle exec ruby -Ilib -Itest test/canary/pool_failure_test.rb
+bundle exec ruby -Ilib -e '
+require "canary"
+entry = Canary::TaskRepo.all.find { |e| e.name == "struct_vector" }
+result = Canary::Verifier.new.call(entry.reference)
+puts "#{result.passed} #{result.rollout_result.passed}/#{result.rollout_result.total}"
+'
 ```
 
-## Task layout
+From there: [the tutorial](docs/tutorial.md) walks that call apart,
+[run a sweep](docs/how-to/run-a-sweep.md) buys real samples from a real
+model, and [author a task](docs/how-to/author-a-task.md) is the per-file
+contract for adding to the corpus.
 
-Each task is a directory under `tasks/` (`Canary::TaskRepo.all.size` is the
-current count — see "What this is not yet" below), loaded by
-`Canary::TaskRepo` (`lib/canary/task_repo.rb`). For example,
-`tasks/struct_vector/`:
+## How a sample is graded
+
+The pipeline for one (task, model, sample) job, in
+`Canary::Eval::Runner`:
+
+1. **Render** (`Canary::Prompt`). The model gets a fixed system prompt
+   stating the output contract (one fenced Ruby block, no prose, no
+   tools) and the task statement. Nothing else from the task reaches it:
+   not the category, not the grader, not the misconception catalogue.
+   That is structural, and a test proves it by reflection.
+2. **Sample** (`Canary::Sampler`, `Canary::Providers::*`). Temperature and
+   a prompt-derived seed are stated on every request, so a re-run
+   reproduces and the three samples of one task are independent draws.
+   The exact request body and the raw response are written to
+   `completions.jsonl` before the record is.
+3. **Extract** (`Canary::Extractor`). The first Ruby-tagged or untagged
+   fence is the submission. An unfenced answer is also a submission, so a
+   model that wrote correct Ruby but skipped the fence is graded rather
+   than dropped. Only an empty answer, or a fence tagged for another
+   language, is a refusal.
+4. **Prefilter** (`Canary::Prefilter`). A Prism parse, no execution. A
+   parse error is a scored failure. A parse error anchored at end of
+   input, on a response the provider cut off at its token limit, is a
+   non-score instead: the harness never saw the whole answer.
+5. **Rollout** (`Canary::Pool`, `Canary::Verifier`). A forked child loads
+   the submission and the grader and reports pass/fail counts back over a
+   pipe. The parent never runs the submission.
+6. **Record** (`Canary::Eval::Record`). One JSON line. `scored: false`
+   with a `non_score_reason` when the harness never got to judge the
+   sample, so a harness limitation is never reported as a model failure.
+
+`Canary::Server` exposes step 4 and 5 as `POST /v1/rollouts` for callers
+without a Ruby process.
+
+## The corpus
+
+44 tasks under `tasks/`: 38 authored from scratch, 6 adapted from dated
+`rails/rails` pull requests and attested as such; 28 graded by Minitest,
+16 by RSpec; 132 broken solutions in total. Each directory:
 
 ```text
 tasks/struct_vector/
   meta.yml       # category, adapter, provenance, statement, one entry per broken solution
   solution.rb    # the reference solution
-  grader.rb      # the test file that grades both solution.rb and each broken/*.rb
+  grader.rb      # grades solution.rb and every broken/*.rb
   broken/
     mutates_operands.rb
     transposed_addition.rb
-    mechanism_free.rb
+    mechanism_free.rb   # mandatory: the simplest mechanism-ignorant answer, which must fail
 ```
 
-`meta.yml` names the adapter (`minitest` or `rspec`), the task's category,
-its provenance (`authored` or `sourced`), its natural-language statement,
-and — for each file under `broken/` — an id and a free-text `misconception`
-describing the specific mistake that solution embodies. See
-[`docs/how-to/author-a-task.md`](docs/how-to/author-a-task.md) for the full
-per-file contract.
+The suite enforces that every reference passes, every broken solution
+fails, and broken solutions fail on distinct grader examples.
+[`docs/CONTAMINATION.md`](docs/CONTAMINATION.md) states exactly what can
+and cannot be claimed about whether a model has seen this material.
 
-## What this is not yet
+## What this is not
 
-- **The corpus is small.** `Canary::TaskRepo.all.size` is the current count.
-  It is a hand-authored probe, not a benchmark, and it is not claimed to be
-  comprehensive.
-- **The sandbox is not hardened.** Rollouts run in a forked child, not a
-  sandboxed or contained one. `test/canary/tamper_test.rb` is an executable
-  catalogue of grader-tampering attacks against the current pool, and a
-  real subset of them still succeed — falling into four accepted, documented
-  classes of the same underlying limit of process-fork isolation on a single
-  machine. Nothing in this repo claims submissions are safely contained.
-  Full accounting: [`docs/explanation/threat-boundary.md`](docs/explanation/threat-boundary.md).
-- **No published result exists.** `results/` carries committed raw sweep
-  artifacts — completions and `Canary::Eval::Record` data from real
-  dispatches — not a scored leaderboard. No leaderboard or citable pass-rate
-  claim is published anywhere in this repo; the artifacts are exactly that,
-  artifacts, not a result.
-- **No performance or throughput claims are made here.** None are published
-  in this README.
-
-## Documentation
-
-Depth that doesn't belong on a front page lives under
-[`docs/`](docs/README.md), organized as tutorial, how-to, reference, and
-explanation. Start there for: running an offline rollout end-to-end,
-authoring a new task, running a sweep, running the wire server, the
-`meta.yml`/record/wire-protocol schemas, and the contamination posture
-(`docs/CONTAMINATION.md`).
+- **Not a benchmark.** Hand-built, 44 tasks, one machine. The register
+  ranks bands, and says so.
+- **Not a hardened sandbox.** Rollouts fork; they do not contain.
+  `test/canary/tamper_test.rb` catalogues 19 grader-tampering vectors, and
+  10 still succeed. [`docs/explanation/threat-boundary.md`](docs/explanation/threat-boundary.md)
+  is the full accounting.
+- **Not one pooled dataset.** Three record schemas exist on disk and they
+  measure different things. The register uses schema 3 only.
+  [`docs/reference/results-layout.md`](docs/reference/results-layout.md)
+  says which runs are which.

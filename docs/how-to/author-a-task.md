@@ -43,8 +43,17 @@ Required keys (`Canary::TaskRepo#load_task` raises on a missing one via
 | `adapter` | yes | `minitest` or `rspec` — which grading framework `grader.rb` uses |
 | `statement` | yes | the *only* field a model ever sees in hidden mode (see "Statement discipline" below) |
 | `provenance` | yes | `authored` or `sourced` — see `docs/CONTAMINATION.md` |
-| `source_attestation` | only if `provenance: sourced` | a training-data-cutoff attestation; loading raises `ArgumentError` for a `sourced` task with a blank one |
+| `source_attestation` | only if `provenance: sourced` | names the upstream and the training cutoff the task claims to postdate; loading raises `ArgumentError` for a `sourced` task with a blank one |
 | `broken` | yes | array of `{id, misconception}` — one entry per file under `broken/` |
+
+Both provenance values are in use: 38 tasks are `authored`, 6 are
+`sourced`. A new task written from scratch is `authored` and carries no
+attestation. A task adapted from external material is `sourced` and must
+cite it: every sourced task in the corpus today names a merged
+`rails/rails` pull request and states plainly that postdating a published
+cutoff is a heuristic, not a guarantee. Follow that form. The corpus
+partition test asserts the citation, and the attestation is the only place
+a reader can check what a sourced task is derived from.
 
 ## `solution.rb`
 
@@ -153,10 +162,10 @@ task's reference solution passes, every broken solution fails and
 discriminates, and every task carries a valid `mechanism_free.rb`. Observed
 output against the current corpus:
 
-```console
-Finished in 7.533673s, 3.0530 runs/s, 72.4746 assertions/s.
+```text
+Finished in 7.914313s, 2.9061 runs/s, 98.9347 assertions/s.
 
-23 runs, 546 assertions, 0 failures, 0 errors, 0 skips
+23 runs, 783 assertions, 0 failures, 0 errors, 0 skips
 ```
 
 Or run the whole suite (`bundle exec rake test`) — a new task directory
