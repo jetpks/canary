@@ -3,13 +3,14 @@
 A Ruby coding evaluation harness, and the raw results of running it against
 about thirty locally-served open-weight models and ten hosted ones.
 
-| | |
-|---|---|
-| **What** | 44 hand-authored Ruby tasks, graded by executing each task's own test suite against the model's code in a forked child |
-| **Results** | the [Canary Register](https://claude.ai/code/artifact/3a79cd91-5e26-4668-89e1-512d41b70437), built from the raw records under [`results/`](results/README.md) |
-| **Ruby** | 4.0.6, pinned in `mise.toml` |
-| **License** | MIT |
-| **Docs** | [`docs/`](docs/README.md), organised as tutorial, how-to, reference, explanation |
+- **What:** 44 hand-authored Ruby tasks, graded by executing each task's
+  own test suite against the model's code in a forked child.
+- **Results:** the [Canary Register](https://claude.ai/code/artifact/3a79cd91-5e26-4668-89e1-512d41b70437),
+  built from the raw records under [`results/`](results/README.md).
+- **Ruby:** 4.0.6, pinned in `mise.toml`.
+- **License:** MIT.
+- **Docs:** [`docs/`](docs/README.md), organised as tutorial, how-to,
+  reference, explanation.
 
 ## What it measures
 
