@@ -105,8 +105,24 @@ The pipeline for one (task, model, sample) job, in
    with a `non_score_reason` when the harness never got to judge the
    sample, so a harness limitation is never reported as a model failure.
 
-`Canary::Server` exposes step 4 and 5 as `POST /v1/rollouts` for callers
-without a Ruby process.
+`Canary::Server` exposes steps 4 and 5 as `POST /v1/rollouts` for callers
+without a Ruby process, and `POST /v1/eval` runs one Ruby snippet in the
+same forked child with no prefilter ahead of it.
+
+## Beyond the one-shot sweep
+
+Everything above is one prompt, one answer. Two newer surfaces drive a
+model through the same graders as tools:
+
+- **`Canary::ToolLoop`** (`bin/canary-tool-loop`) gives a chat model
+  `ruby_eval` and `run_tests` as OpenAI tools, executes each call against a
+  running `bin/canary-server`, and loops until the model answers or a turn
+  cap is hit. [How-to](docs/how-to/run-the-tool-loop.md).
+- **`Canary::LoopBench`** (`bin/canary-loop-bench`) runs several of those
+  conversations concurrently against one model and summarises per-turn
+  latency. [How-to](docs/how-to/measure-turn-latency.md).
+
+Neither feeds the register. The register is the one-shot instrument.
 
 ## The corpus
 

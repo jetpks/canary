@@ -21,7 +21,14 @@ arrived from the Canary Register, start with
 - [Author a task](how-to/author-a-task.md) — the per-file contract for a
   new `tasks/<name>/` directory and the statement-writing rules.
 - [Run the server](how-to/run-the-server.md) — boot `bin/canary-server`
-  and call `POST /v1/rollouts`.
+  and call `POST /v1/rollouts` or `POST /v1/eval`.
+- [Run the tool loop](how-to/run-the-tool-loop.md) — `bin/canary-tool-loop`:
+  a chat model calls `ruby_eval`/`run_tests` as tools against a running
+  `bin/canary-server` and loops to a final answer.
+- [Measure turn latency](how-to/measure-turn-latency.md) —
+  `bin/canary-loop-bench`: several concurrent `Canary::ToolLoop`
+  conversations against one model, per-turn latency and the gateway's
+  prefix-cache behaviour under interleaved load.
 
 ## Reference
 
@@ -32,7 +39,7 @@ arrived from the Canary Register, start with
   `Canary::Eval::Record` field and every non-score reason.
 - [`meta.yml` keys](reference/meta-yml.md)
 - [Wire protocol](reference/wire-protocol.md) — the `POST /v1/rollouts`
-  request and response.
+  and `POST /v1/eval` request and response shapes.
 - [Public API map](reference/public-api.md) — every constant
   `require "canary"` loads, one line each.
 

@@ -1,0 +1,69 @@
+#!/usr/bin/env ruby
+
+require_relative "../lib/canary"
+require "async"
+require "optparse"
+
+# Boots nothing itself (as with bin/canary-server): both the model edge and
+# the tool edge - a real bin/canary-server - are the caller's job. Walks
+# Canary::ToolLoop end to end against them and prints exactly one final
+# stdout line: OUTCOME: <typed outcome>, machine-readable without parsing
+# the transcript.
+DEFAULT_TASK = "struct_vector"
+# The studio gateway ignores auth (bin/eval_sweep.rb:156 precedent) - a
+# placeholder is fine when CANARY_TOOL_LOOP_API_KEY isn't set.
+DEFAULT_MODEL_API_KEY = "canary-tool-loop-placeholder-key"
+# A c=1 studio turn measured ~40s live (edge-probe.json); generous headroom
+# above that without matching bin/eval_sweep.rb's full-sweep 1800s, since a
+# single chat turn is not a 16k-token sweep generation.
+MODEL_READ_TIMEOUT = 300
+
+options = {
+  task: DEFAULT_TASK,
+  base_url: nil,
+  model: nil,
+  canary_url: nil,
+  max_turns: Canary::ToolLoop::DEFAULT_MAX_TURNS,
+  tool_choice: "auto",
+  transcript: nil,
+  max_tokens: Canary::Providers::OpenAICompat::DEFAULT_MAX_TOKENS
+}
+
+OptionParser.new do |parser|
+  parser.on("--task NAME", "Task to run (default #{DEFAULT_TASK})") { |v| options[:task] = v }
+  parser.on("--base-url URL", "Model edge base URL (an OpenAI-compatible /v1)") { |v| options[:base_url] = v }
+  parser.on("--model ALIAS", "Model id/alias to request") { |v| options[:model] = v }
+  parser.on("--canary-url URL", "Tool edge base URL (a bin/canary-server)") { |v| options[:canary_url] = v }
+  parser.on("--max-turns N", Integer, "Turn cap (default #{options[:max_turns]})") { |v| options[:max_turns] = v }
+  parser.on("--tool-choice CHOICE", %w[auto required], "First-turn tool_choice (default auto)") { |v| options[:tool_choice] = v }
+  parser.on("--transcript PATH", "Where to write the JSONL transcript") { |v| options[:transcript] = v }
+  parser.on("--max-tokens N", Integer, "Per-request max_tokens (default #{options[:max_tokens]})") { |v| options[:max_tokens] = v }
+end.parse!(ARGV)
+
+abort "--base-url is required" unless options[:base_url]
+abort "--model is required" unless options[:model]
+abort "--canary-url is required" unless options[:canary_url]
+abort "--transcript is required" unless options[:transcript]
+
+canary_token = ENV["CANARY_SERVER_TOKEN"]
+abort "CANARY_SERVER_TOKEN must be set" if canary_token.to_s.empty?
+
+model_api_key = ENV["CANARY_TOOL_LOOP_API_KEY"] || DEFAULT_MODEL_API_KEY
+
+entry = Canary::TaskRepo.all.find { |candidate| candidate.name == options[:task] }
+abort "unknown task #{options[:task].inspect}" unless entry
+
+File.delete(options[:transcript]) if File.exist?(options[:transcript])
+
+chat_provider = Canary::Providers::OpenAICompat.new(base_url: options[:base_url], api_key: model_api_key, read_timeout: MODEL_READ_TIMEOUT)
+canary_client = Canary::ToolLoop::CanaryClient.new(base_url: options[:canary_url], token: canary_token)
+loop_runner = Canary::ToolLoop.new(
+  chat_provider: chat_provider, canary_client: canary_client, model: options[:model],
+  transcript_path: options[:transcript], max_turns: options[:max_turns],
+  tool_choice: options[:tool_choice], max_tokens: options[:max_tokens]
+)
+
+outcome = Sync { loop_runner.call(entry) }
+
+puts "OUTCOME: #{outcome}"
+exit(outcome == :loop_error ? 1 : 0)

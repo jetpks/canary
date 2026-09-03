@@ -28,9 +28,9 @@ bundle exec rake test
 ```
 
 ```text
-Finished in 23.371429s, 12.3655 runs/s, 117.1088 assertions/s.
+Finished in 26.648339s, 12.7963 runs/s, 110.3258 assertions/s.
 
-289 runs, 2737 assertions, 0 failures, 0 errors, 13 skips
+341 runs, 2940 assertions, 0 failures, 0 errors, 13 skips
 ```
 
 The counts grow as the corpus and suite grow; the number that matters is
