@@ -1,0 +1,30 @@
+{
+  "rescored_at": "20260901T233019Z",
+  "model": "qwen3.8-27b-mxfp8-concurrent1",
+  "records": 132,
+  "regraded": 11,
+  "tasks": {
+    "cache_sweep_packed_entries": 1,
+    "ensure_return_swallows_exception": 1,
+    "enumerable_sparse_array": 1,
+    "enumerator_lazy_short_circuit": 1,
+    "eql_hash_distance_point": 1,
+    "reading_circle_member_enumeration": 1,
+    "character_safe_truncator": 1,
+    "counter_override_dup_clone": 1,
+    "enumerator_without_block_countdown": 1,
+    "mood_board_owned_swatches": 1,
+    "weight_unit_partial_order": 1
+  },
+  "before": {
+    "scored": 121,
+    "passed": 96,
+    "total": 132
+  },
+  "after": {
+    "scored": 122,
+    "passed": 96,
+    "total": 132
+  },
+  "reason": "re-extracted with Canary::Extractor accepting ok/bare_ruby/bare_malformed"
+}

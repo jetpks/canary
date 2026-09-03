@@ -1,0 +1,22 @@
+{
+  "schema_version": 3,
+  "generated_at": "2026-09-02T05:42:22Z",
+  "tasks": 44,
+  "hidden_k": 3,
+  "visible_k": 1,
+  "max_tokens": 4096,
+  "temperature": 1.0,
+  "seed_derivation": "sha256(prompt + sample_index)[0,8]",
+  "concurrency": {
+    "muse-glimmer-30b-4bit": 1
+  },
+  "providers": {
+    "muse-glimmer-30b-4bit": "studio"
+  },
+  "extra_body": {
+    "muse-glimmer-30b-4bit": {
+      "reasoning_effort": "none"
+    }
+  },
+  "system_prompt": "You are completing a self-contained Ruby coding task.\n\nReply with exactly one fenced Ruby code block containing the complete\nimplementation, and nothing else - no prose before or after it.\n\nYou have no tools, no filesystem access, and no shell. Do not emit\ntool calls; write the code directly.\n"
+}

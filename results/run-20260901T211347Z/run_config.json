@@ -1,0 +1,22 @@
+{
+  "schema_version": 3,
+  "generated_at": "2026-09-01T21:13:47Z",
+  "tasks": 44,
+  "hidden_k": 3,
+  "visible_k": 1,
+  "max_tokens": 16384,
+  "temperature": 1.0,
+  "seed_derivation": "sha256(prompt + sample_index)[0,8]",
+  "concurrency": {
+    "nemotron-3-super": 1
+  },
+  "providers": {
+    "nemotron-3-super": "studio"
+  },
+  "extra_body": {
+    "nemotron-3-super": {
+      "reasoning_effort": "none"
+    }
+  },
+  "system_prompt": "You are completing a self-contained Ruby coding task.\n\nReply with exactly one fenced Ruby code block containing the complete\nimplementation, and nothing else - no prose before or after it.\n\nYou have no tools, no filesystem access, and no shell. Do not emit\ntool calls; write the code directly.\n"
+}

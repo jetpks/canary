@@ -1,0 +1,26 @@
+{
+  "rescored_at": "20260901T233019Z",
+  "model": "qwen3.8-flash-next-ream288",
+  "records": 132,
+  "regraded": 10,
+  "tasks": {
+    "enumerator_lazy_short_circuit": 1,
+    "playlist_dup_clone_singleton": 3,
+    "reading_circle_member_enumeration": 1,
+    "to_proc_lookup": 2,
+    "counter_override_dup_clone": 1,
+    "character_safe_truncator": 1,
+    "gauge_reading_exact_sum": 1
+  },
+  "before": {
+    "scored": 117,
+    "passed": 70,
+    "total": 132
+  },
+  "after": {
+    "scored": 119,
+    "passed": 70,
+    "total": 132
+  },
+  "reason": "re-extracted with Canary::Extractor accepting ok/bare_ruby/bare_malformed"
+}

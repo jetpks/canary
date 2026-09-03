@@ -1,0 +1,20 @@
+{
+  "rescored_at": "20260901T223852Z",
+  "model": "claude-sonnet-5",
+  "records": 884,
+  "regraded": 1,
+  "tasks": {
+    "character_safe_truncator": 1
+  },
+  "before": {
+    "scored": 875,
+    "passed": 807,
+    "total": 884
+  },
+  "after": {
+    "scored": 876,
+    "passed": 808,
+    "total": 884
+  },
+  "reason": "re-extracted with Canary::Extractor accepting ok/bare_ruby"
+}

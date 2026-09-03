@@ -1,0 +1,29 @@
+{
+  "rescored_at": "20260901T233019Z",
+  "model": "qwen3.8-27b-mxfp8-concurrent1",
+  "records": 132,
+  "regraded": 10,
+  "tasks": {
+    "weight_unit_partial_order": 1,
+    "stock_count_float_difference": 1,
+    "numeric_coerce_fraction": 1,
+    "attribute_bag_hash_equality": 1,
+    "comparable_money": 1,
+    "string_attr_parser": 1,
+    "enumerable_sparse_array": 1,
+    "keyword_splat_invoker": 1,
+    "shadowed_constant_circle": 1,
+    "enumerator_lazy_short_circuit": 1
+  },
+  "before": {
+    "scored": 121,
+    "passed": 94,
+    "total": 132
+  },
+  "after": {
+    "scored": 121,
+    "passed": 94,
+    "total": 132
+  },
+  "reason": "re-extracted with Canary::Extractor accepting ok/bare_ruby/bare_malformed"
+}

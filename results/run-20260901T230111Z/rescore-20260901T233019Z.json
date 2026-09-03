@@ -1,0 +1,49 @@
+{
+  "rescored_at": "20260901T233019Z",
+  "model": "olmo-3-7b",
+  "records": 132,
+  "regraded": 56,
+  "tasks": {
+    "attribute_bag_hash_equality": 2,
+    "block_memoizer": 3,
+    "block_safe_caller": 1,
+    "character_safe_truncator": 2,
+    "comparable_money": 2,
+    "coordinate_destructure_splat": 3,
+    "credits_reel_contributor_chain": 1,
+    "ensure_return_swallows_exception": 1,
+    "enumerable_sparse_array": 3,
+    "eql_hash_distance_point": 3,
+    "exception_retrier": 3,
+    "gauge_reading_exact_sum": 1,
+    "metaprogramming_open_record": 2,
+    "numeric_coerce_fraction": 1,
+    "stock_count_float_difference": 3,
+    "string_attr_parser": 3,
+    "struct_vector": 3,
+    "tallying_key_store_fetch_contract": 1,
+    "temperature_report_injected_scale": 3,
+    "text_squash_no_mutation": 2,
+    "to_proc_lookup": 2,
+    "weight_unit_partial_order": 1,
+    "case_match_temperature_band": 2,
+    "enumerator_lazy_short_circuit": 2,
+    "hash_default_proc_tally": 1,
+    "reading_circle_member_enumeration": 1,
+    "counter_override_dup_clone": 1,
+    "distance_coerce_subtraction": 1,
+    "peekable_token_stream": 1,
+    "shipment_alert_recipient_protocol": 1
+  },
+  "before": {
+    "scored": 65,
+    "passed": 13,
+    "total": 132
+  },
+  "after": {
+    "scored": 97,
+    "passed": 13,
+    "total": 132
+  },
+  "reason": "re-extracted with Canary::Extractor accepting ok/bare_ruby/bare_malformed"
+}

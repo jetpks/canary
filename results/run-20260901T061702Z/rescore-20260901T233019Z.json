@@ -1,0 +1,21 @@
+{
+  "rescored_at": "20260901T233019Z",
+  "model": "qwen3.8-flash-next-reap288",
+  "records": 132,
+  "regraded": 2,
+  "tasks": {
+    "enumerator_lazy_short_circuit": 1,
+    "temperature_report_injected_scale": 1
+  },
+  "before": {
+    "scored": 130,
+    "passed": 75,
+    "total": 132
+  },
+  "after": {
+    "scored": 131,
+    "passed": 75,
+    "total": 132
+  },
+  "reason": "re-extracted with Canary::Extractor accepting ok/bare_ruby/bare_malformed"
+}

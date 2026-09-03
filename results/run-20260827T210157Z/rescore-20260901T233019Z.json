@@ -1,0 +1,22 @@
+{
+  "rescored_at": "20260901T233019Z",
+  "model": "qwen3.8-flash-next-oq3",
+  "records": 132,
+  "regraded": 3,
+  "tasks": {
+    "enumerable_sparse_array": 1,
+    "string_attr_parser": 1,
+    "weight_unit_partial_order": 1
+  },
+  "before": {
+    "scored": 127,
+    "passed": 108,
+    "total": 132
+  },
+  "after": {
+    "scored": 128,
+    "passed": 108,
+    "total": 132
+  },
+  "reason": "re-extracted with Canary::Extractor accepting ok/bare_ruby/bare_malformed"
+}

@@ -1,0 +1,20 @@
+{
+  "schema_version": 3,
+  "generated_at": "2026-09-01T21:08:57Z",
+  "tasks": 44,
+  "hidden_k": 3,
+  "visible_k": 1,
+  "max_tokens": 16384,
+  "temperature": 1.0,
+  "seed_derivation": "sha256(prompt + sample_index)[0,8]",
+  "concurrency": {
+    "qwen3-coder-next": 1
+  },
+  "providers": {
+    "qwen3-coder-next": "studio"
+  },
+  "extra_body": {
+    "qwen3-coder-next": {}
+  },
+  "system_prompt": "You are completing a self-contained Ruby coding task.\n\nReply with exactly one fenced Ruby code block containing the complete\nimplementation, and nothing else - no prose before or after it.\n\nYou have no tools, no filesystem access, and no shell. Do not emit\ntool calls; write the code directly.\n"
+}
