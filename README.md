@@ -110,10 +110,12 @@ The pipeline for one (task, model, sample) job, in
 without a Ruby process, and `POST /v1/eval` runs one Ruby snippet in the
 same forked child with no prefilter ahead of it.
 
-## Beyond the one-shot sweep
+## Where this is going
 
-Everything above is one prompt, one answer. Two newer surfaces drive a
-model through the same graders as tools:
+Everything above is one prompt, one answer, and every number in the
+register comes from that instrument. The next question is how the same
+models behave when they can run code and see test output before they
+commit to an answer. Two early surfaces exist for that, unmeasured so far:
 
 - **`Canary::ToolLoop`** (`bin/canary-tool-loop`) gives a chat model
   `ruby_eval` and `run_tests` as OpenAI tools, executes each call against a
@@ -123,7 +125,9 @@ model through the same graders as tools:
   conversations concurrently against one model and summarises per-turn
   latency. [How-to](docs/how-to/measure-turn-latency.md).
 
-Neither feeds the register. The register is the one-shot instrument.
+Neither has produced a committed result yet, and neither feeds the
+register. When they do, agentic runs will be reported as their own
+measurement, not pooled with the one-shot rows.
 
 ## The corpus
 
