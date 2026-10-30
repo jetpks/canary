@@ -167,9 +167,28 @@ module Canary
       end
 
       reader.close
-      _pid, status = Process.wait2(pid)
+      _pid, status = wait_reaped(pid)
 
       data.empty? ? crash_result(status, build_failure) : marshalled_result(data, status, build_failure)
+    end
+
+    # A blocking Process.wait2 can return nil BEFORE the child has exited
+    # when it runs inside a fiber under a scheduler (Async's reactor — every
+    # server request dispatches the pool from `task.async`): the scheduled
+    # wait hands control back with no status, and treating that as final
+    # leaks the relay as a zombie (observed on linux/ruby 4.0; darwin's
+    # wait2 blocks truly). Retry until a status arrives; ECHILD means a
+    # reaper other than us got there first (none exists today) — treat as
+    # no status rather than crashing the caller's taxonomy.
+    def wait_reaped(pid)
+      loop do
+        result = Process.wait2(pid)
+        return result if result
+
+        sleep 0.005
+      end
+    rescue Errno::ECHILD
+      nil
     end
 
     # Runs inside the process #fork_and_collect just forked (the "relay").
@@ -266,7 +285,7 @@ module Canary
         # the whole group already exited between the timeout firing and the
         # kill; still reap it below so it doesn't linger as a zombie.
       end
-      Process.wait2(pid)
+      wait_reaped(pid)
       reader.close
 
       build_failure.call(outcome: :timeout, error: "exceeded #{timeout}s timeout")
@@ -300,7 +319,9 @@ module Canary
     end
 
     def crash_result(status, build_failure)
-      detail = if status.signaled?
+      detail = if status.nil?
+                 "exited without reporting a result (status unavailable; reaped externally)"
+               elsif status.signaled?
                  "terminated by signal #{status.termsig} (#{Signal.signame(status.termsig)})"
                else
                  "exited with status #{status.exitstatus} without reporting a result"
