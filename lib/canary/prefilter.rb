@@ -136,7 +136,7 @@ module Canary
     end
 
     def tier1_findings
-      runner = OffenseCollector.new(RUBOCOP_OPTIONS, self.class.config_store)
+      runner = OffenseCollector.new(RUBOCOP_OPTIONS.dup, self.class.config_store)
       runner.run([@submission_path])
       runner.offenses.map { |offense| finding_from_offense(offense) }
     end
