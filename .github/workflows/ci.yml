@@ -1,0 +1,27 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        ruby: ["4.0"]
+    env:
+      BUNDLE_PATH: vendor/bundle
+      MISE_RUBY_VERSION: ${{ matrix.ruby }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: jdx/mise-action@v4
+      - uses: actions/cache@v6
+        with:
+          path: vendor/bundle
+          key: bundle-ruby-${{ matrix.ruby }}-${{ hashFiles('Gemfile.lock') }}
+          restore-keys: bundle-ruby-${{ matrix.ruby }}-
+      - run: bundle install
+      - run: bundle exec rake test
